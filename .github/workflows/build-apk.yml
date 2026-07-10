@@ -1,0 +1,74 @@
+name: Build Clean Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify clean repository structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f settings.gradle
+          test -f build.gradle
+          test -f gradle.properties
+          test -f app/build.gradle
+          test -f app/src/main/java/com/gal/familytrips/MainActivity.kt
+
+          echo "Repository root:"
+          pwd
+          echo "Gradle files:"
+          find . -maxdepth 3 -type f             \( -name 'settings.gradle*' -o -name 'build.gradle*' -o -name 'gradle.properties' \)             -print | sort
+
+          COUNT="$(find . -type f \( -name settings.gradle -o -name settings.gradle.kts \) | wc -l)"
+          test "$COUNT" -eq 1
+
+          grep -q '^android.useAndroidX=true$' gradle.properties
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK 35
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build APK
+        run: gradle --no-daemon --stacktrace clean assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gal-Family-Trips-Clean-Baseline-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
