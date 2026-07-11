@@ -45,6 +45,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
@@ -241,16 +242,26 @@ fun GalTripsApp(
 
     if (showAddTrip) {
         NewTripDialog(
+            existingTrip = null,
             onDismiss = { showAddTrip = false },
-            onConfirm = { name, destinations, startDate, endDate ->
+            onConfirm = { name, stays ->
+                val normalizedStays = stays.sortedBy { it.startDate }
+                val generatedDays = buildDaysFromDestinationStays(
+                    stays = normalizedStays,
+                    existingDays = emptyList()
+                )
+                val destinations = normalizedStays
+                    .map { it.destination }
+                    .distinct()
+
                 val newTrip = Trip(
                     id = UUID.randomUUID().toString(),
                     name = name,
                     destination = destinations.joinToString(" • "),
                     destinationStops = destinations,
-                    startDate = startDate,
-                    endDate = endDate,
-                    days = emptyList(),
+                    startDate = normalizedStays.first().startDate,
+                    endDate = normalizedStays.last().endDate,
+                    days = generatedDays,
                     hotels = emptyList(),
                     restaurants = emptyList(),
                     expenses = emptyList(),
@@ -267,7 +278,8 @@ fun GalTripsApp(
                         "טיול יומי",
                         "כללי"
                     ),
-                    offlineMode = false
+                    offlineMode = false,
+                    destinationStays = normalizedStays
                 )
 
                 onStateChange(
@@ -291,68 +303,163 @@ private data class DestinationOption(
 }
 
 private val majorDestinations = listOf(
-    DestinationOption("בודפשט", "הונגריה"),
-    DestinationOption("וינה", "אוסטריה"),
-    DestinationOption("פראג", "צ'כיה"),
-    DestinationOption("ברלין", "גרמניה"),
-    DestinationOption("מינכן", "גרמניה"),
-    DestinationOption("פריז", "צרפת"),
-    DestinationOption("לונדון", "בריטניה"),
-    DestinationOption("אמסטרדם", "הולנד"),
-    DestinationOption("בריסל", "בלגיה"),
-    DestinationOption("רומא", "איטליה"),
-    DestinationOption("מילאנו", "איטליה"),
-    DestinationOption("ונציה", "איטליה"),
-    DestinationOption("ברצלונה", "ספרד"),
-    DestinationOption("מדריד", "ספרד"),
-    DestinationOption("ליסבון", "פורטוגל"),
-    DestinationOption("אתונה", "יוון"),
-    DestinationOption("לרנקה", "קפריסין"),
-    DestinationOption("בוקרשט", "רומניה"),
-    DestinationOption("ורשה", "פולין"),
-    DestinationOption("קרקוב", "פולין"),
-    DestinationOption("ציריך", "שווייץ"),
-    DestinationOption("ניו יורק", "ארצות הברית"),
-    DestinationOption("לוס אנג'לס", "ארצות הברית"),
-    DestinationOption("מיאמי", "ארצות הברית"),
+    DestinationOption("אבו דאבי", "איחוד האמירויות"),
+    DestinationOption("אדיס אבבה", "אתיופיה"),
     DestinationOption("אורלנדו", "ארצות הברית"),
-    DestinationOption("לאס וגאס", "ארצות הברית"),
-    DestinationOption("טורונטו", "קנדה"),
-    DestinationOption("דובאי", "איחוד האמירויות"),
+    DestinationOption("איביזה", "ספרד"),
+    DestinationOption("איסטנבול", "טורקיה"),
+    DestinationOption("אמסטרדם", "הולנד"),
+    DestinationOption("אתונה", "יוון"),
+    DestinationOption("אטלנטה", "ארצות הברית"),
+    DestinationOption("באקו", "אזרבייג'ן"),
+    DestinationOption("בזל", "שווייץ"),
+    DestinationOption("באטומי", "גאורגיה"),
     DestinationOption("בנגקוק", "תאילנד"),
-    DestinationOption("טוקיו", "יפן")
+    DestinationOption("ברטיסלבה", "סלובקיה"),
+    DestinationOption("בריסל", "בלגיה"),
+    DestinationOption("ברלין", "גרמניה"),
+    DestinationOption("בודפשט", "הונגריה"),
+    DestinationOption("בוסטון", "ארצות הברית"),
+    DestinationOption("בוקרשט", "רומניה"),
+    DestinationOption("בלגרד", "סרביה"),
+    DestinationOption("בייג'ינג", "סין"),
+    DestinationOption("ברצלונה", "ספרד"),
+    DestinationOption("ג'נבה", "שווייץ"),
+    DestinationOption("דובאי", "איחוד האמירויות"),
+    DestinationOption("דוברובניק", "קרואטיה"),
+    DestinationOption("דלהי", "הודו"),
+    DestinationOption("דיסלדורף", "גרמניה"),
+    DestinationOption("הרקליון", "יוון"),
+    DestinationOption("וינה", "אוסטריה"),
+    DestinationOption("וילנה", "ליטא"),
+    DestinationOption("ונציה", "איטליה"),
+    DestinationOption("ורונה", "איטליה"),
+    DestinationOption("ורשה", "פולין"),
+    DestinationOption("זאגרב", "קרואטיה"),
+    DestinationOption("זנזיבר", "טנזניה"),
+    DestinationOption("טביליסי", "גאורגיה"),
+    DestinationOption("טוקיו", "יפן"),
+    DestinationOption("טורונטו", "קנדה"),
+    DestinationOption("טיווט", "מונטנגרו"),
+    DestinationOption("טשקנט", "אוזבקיסטן"),
+    DestinationOption("יוהנסבורג", "דרום אפריקה"),
+    DestinationOption("לונדון", "בריטניה"),
+    DestinationOption("לוס אנג'לס", "ארצות הברית"),
+    DestinationOption("לובליאנה", "סלובניה"),
+    DestinationOption("ליסבון", "פורטוגל"),
+    DestinationOption("לרנקה", "קפריסין"),
+    DestinationOption("ליון", "צרפת"),
+    DestinationOption("מדריד", "ספרד"),
+    DestinationOption("מיאמי", "ארצות הברית"),
+    DestinationOption("מילאנו", "איטליה"),
+    DestinationOption("מינכן", "גרמניה"),
+    DestinationOption("מינסק", "בלארוס"),
+    DestinationOption("מיקונוס", "יוון"),
+    DestinationOption("מלאגה", "ספרד"),
+    DestinationOption("מרסיי", "צרפת"),
+    DestinationOption("מוסקבה", "רוסיה"),
+    DestinationOption("מונטריאול", "קנדה"),
+    DestinationOption("ניו יורק", "ארצות הברית"),
+    DestinationOption("ניס", "צרפת"),
+    DestinationOption("נאפולי", "איטליה"),
+    DestinationOption("סופיה", "בולגריה"),
+    DestinationOption("סוצ'י", "רוסיה"),
+    DestinationOption("סיאול", "דרום קוריאה"),
+    DestinationOption("סלוניקי", "יוון"),
+    DestinationOption("סן פרנסיסקו", "ארצות הברית"),
+    DestinationOption("פאפוס", "קפריסין"),
+    DestinationOption("פאריס", "צרפת"),
+    DestinationOption("פראג", "צ'כיה"),
+    DestinationOption("פורטו", "פורטוגל"),
+    DestinationOption("פוקט", "תאילנד"),
+    DestinationOption("פלמה דה מיורקה", "ספרד"),
+    DestinationOption("פרנקפורט", "גרמניה"),
+    DestinationOption("ציריך", "שווייץ"),
+    DestinationOption("קאהיר", "מצרים"),
+    DestinationOption("קופנהגן", "דנמרק"),
+    DestinationOption("קלן", "גרמניה"),
+    DestinationOption("קישינב", "מולדובה"),
+    DestinationOption("קרקוב", "פולין"),
+    DestinationOption("רודוס", "יוון"),
+    DestinationOption("ריגה", "לטביה"),
+    DestinationOption("רומא", "איטליה"),
+    DestinationOption("שנג'ן", "סין"),
+    DestinationOption("שטוקהולם", "שוודיה"),
+    DestinationOption("שיקגו", "ארצות הברית"),
+    DestinationOption("שרם א-שייח'", "מצרים")
+).sortedWith(
+    compareBy<DestinationOption> { it.country }.thenBy { it.city }
 )
 
 @Composable
 private fun NewTripDialog(
+    existingTrip: Trip?,
     onDismiss: () -> Unit,
     onConfirm: (
         name: String,
-        destinations: List<String>,
-        startDate: String,
-        endDate: String
+        stays: List<DestinationStay>
     ) -> Unit
 ) {
-    var tripName by remember { mutableStateOf("") }
-    var startDate by remember { mutableStateOf("") }
-    var endDate by remember { mutableStateOf("") }
-    var multiDestination by remember { mutableStateOf(false) }
+    var tripName by remember(existingTrip?.id) {
+        mutableStateOf(existingTrip?.name.orEmpty())
+    }
     var destinationMenuOpen by remember { mutableStateOf(false) }
+    var destinationSearch by remember { mutableStateOf("") }
     var customDestination by remember { mutableStateOf("") }
 
-    val selectedDestinations = remember {
-        mutableStateListOf<String>()
+    val initialStays = remember(existingTrip?.id) {
+        when {
+            existingTrip == null -> emptyList()
+            existingTrip.destinationStays.isNotEmpty() ->
+                existingTrip.destinationStays
+            else -> listOf(
+                DestinationStay(
+                    id = UUID.randomUUID().toString(),
+                    destination = existingTrip.destinationStops
+                        .firstOrNull()
+                        ?: existingTrip.destination,
+                    startDate = existingTrip.startDate,
+                    endDate = existingTrip.endDate
+                )
+            )
+        }
     }
 
-    val validDates = startDate.isNotBlank() &&
-        endDate.isNotBlank() &&
-        runCatching {
-            !LocalDate.parse(endDate).isBefore(LocalDate.parse(startDate))
-        }.getOrDefault(false)
+    val stays = remember(existingTrip?.id) {
+        mutableStateListOf<DestinationStay>().apply {
+            addAll(initialStays)
+        }
+    }
+
+    val filteredDestinations = remember(destinationSearch) {
+        val query = destinationSearch.trim().lowercase()
+        if (query.isBlank()) {
+            majorDestinations
+        } else {
+            majorDestinations.filter {
+                it.city.lowercase().contains(query) ||
+                    it.country.lowercase().contains(query) ||
+                    it.displayName.lowercase().contains(query)
+            }
+        }
+    }
+
+    val scheduleError = validateDestinationStays(stays)
+    val valid = tripName.isNotBlank() &&
+        stays.isNotEmpty() &&
+        scheduleError == null
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("טיול חדש") },
+        title = {
+            Text(
+                if (existingTrip == null) {
+                    "טיול חדש"
+                } else {
+                    "עריכת פרטי הטיול"
+                }
+            )
+        },
         text = {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -367,34 +474,26 @@ private fun NewTripDialog(
                 }
 
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "טיול רב־יעדי",
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "אפשר לבחור כמה ערים או מדינות",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary
-                            )
-                        }
+                    Text(
+                        "יעדים ותאריכים",
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "כל יעד יוצר אוטומטית את ימי המסלול שלו",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
 
-                        Switch(
-                            checked = multiDestination,
-                            onCheckedChange = { checked ->
-                                multiDestination = checked
-                                if (!checked && selectedDestinations.size > 1) {
-                                    val first = selectedDestinations.first()
-                                    selectedDestinations.clear()
-                                    selectedDestinations.add(first)
-                                }
-                            }
-                        )
-                    }
+                item {
+                    OutlinedTextField(
+                        value = destinationSearch,
+                        onValueChange = { destinationSearch = it },
+                        label = { Text("חיפוש עיר או מדינה") },
+                        leadingIcon = { Text("🔎") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
 
                 item {
@@ -405,13 +504,7 @@ private fun NewTripDialog(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
-                                if (selectedDestinations.isEmpty()) {
-                                    "בחירת עיר או מדינה"
-                                } else if (multiDestination) {
-                                    "הוספת יעד נוסף"
-                                } else {
-                                    "החלפת יעד"
-                                },
+                                "הוספת יעד מהרשימה",
                                 modifier = Modifier.weight(1f)
                             )
                             Text("⌄")
@@ -423,31 +516,35 @@ private fun NewTripDialog(
                                 destinationMenuOpen = false
                             }
                         ) {
-                            majorDestinations.forEach { option ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(option.displayName)
-                                    },
-                                    onClick = {
-                                        if (multiDestination) {
-                                            if (
-                                                option.displayName !in
-                                                selectedDestinations
-                                            ) {
-                                                selectedDestinations.add(
-                                                    option.displayName
+                            filteredDestinations
+                                .take(80)
+                                .forEach { option ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(option.city)
+                                                Text(
+                                                    option.country,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = TextSecondary
                                                 )
                                             }
-                                        } else {
-                                            selectedDestinations.clear()
-                                            selectedDestinations.add(
-                                                option.displayName
+                                        },
+                                        onClick = {
+                                            val suggestedStart = suggestedNextStartDate(stays)
+                                            stays.add(
+                                                DestinationStay(
+                                                    id = UUID.randomUUID().toString(),
+                                                    destination = option.displayName,
+                                                    startDate = suggestedStart,
+                                                    endDate = suggestedStart
+                                                )
                                             )
+                                            destinationMenuOpen = false
+                                            destinationSearch = ""
                                         }
-                                        destinationMenuOpen = false
-                                    }
-                                )
-                            }
+                                    )
+                                }
                         }
                     }
                 }
@@ -462,7 +559,7 @@ private fun NewTripDialog(
                             value = customDestination,
                             onValueChange = { customDestination = it },
                             label = {
-                                Text("עיר/מדינה אחרת")
+                                Text("יעד אחר שאינו ברשימה")
                             },
                             modifier = Modifier.weight(1f),
                             singleLine = true
@@ -471,15 +568,15 @@ private fun NewTripDialog(
                         FilledTonalButton(
                             enabled = customDestination.isNotBlank(),
                             onClick = {
-                                val value = customDestination.trim()
-                                if (multiDestination) {
-                                    if (value !in selectedDestinations) {
-                                        selectedDestinations.add(value)
-                                    }
-                                } else {
-                                    selectedDestinations.clear()
-                                    selectedDestinations.add(value)
-                                }
+                                val suggestedStart = suggestedNextStartDate(stays)
+                                stays.add(
+                                    DestinationStay(
+                                        id = UUID.randomUUID().toString(),
+                                        destination = customDestination.trim(),
+                                        startDate = suggestedStart,
+                                        endDate = suggestedStart
+                                    )
+                                )
                                 customDestination = ""
                             }
                         ) {
@@ -488,119 +585,103 @@ private fun NewTripDialog(
                     }
                 }
 
-                if (selectedDestinations.isNotEmpty()) {
+                if (stays.isEmpty()) {
                     item {
-                        Text(
-                            "יעדים שנבחרו",
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    items(
-                        selectedDestinations,
-                        key = { it }
-                    ) { destination ->
                         Surface(
                             shape = RoundedCornerShape(14.dp),
-                            color = SoftBlue,
-                            border = BorderStroke(
-                                1.dp,
-                                Color(0xFFD6E6F8)
-                            )
+                            color = SoftSun
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal = 10.dp,
-                                        vertical = 7.dp
-                                    ),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "📍 $destination",
-                                    modifier = Modifier.weight(1f),
-                                    color = Navy
-                                )
-
-                                IconButton(
-                                    onClick = {
-                                        selectedDestinations.remove(
-                                            destination
-                                        )
-                                    },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    SmallDeleteIcon(
-                                        Modifier.size(25.dp)
-                                    )
-                                }
-                            }
+                            Text(
+                                "יש להוסיף לפחות יעד אחד.",
+                                modifier = Modifier.padding(11.dp),
+                                color = Color(0xFF7D5B00)
+                            )
                         }
                     }
                 }
 
-                item {
-                    TripDatePickerField(
-                        label = "תאריך התחלה",
-                        value = startDate,
-                        onValueChange = { selected ->
-                            startDate = selected
-                            if (
-                                endDate.isNotBlank() &&
-                                runCatching {
-                                    LocalDate.parse(endDate).isBefore(
-                                        LocalDate.parse(selected)
-                                    )
-                                }.getOrDefault(false)
+                items(
+                    stays,
+                    key = { it.id }
+                ) { stay ->
+                    DestinationStayEditorCard(
+                        stay = stay,
+                        onChange = { updated ->
+                            val index = stays.indexOfFirst {
+                                it.id == updated.id
+                            }
+                            if (index >= 0) {
+                                stays[index] = updated
+                            }
+                        },
+                        onDelete = {
+                            stays.removeAll { it.id == stay.id }
+                        }
+                    )
+                }
+
+                scheduleError?.let { error ->
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color(0xFFFFE5E1)
+                        ) {
+                            Text(
+                                error,
+                                modifier = Modifier.padding(11.dp),
+                                color = Coral,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+
+                if (stays.isNotEmpty() && scheduleError == null) {
+                    item {
+                        val dayCount = stays.sumOf {
+                            inclusiveDayCount(it.startDate, it.endDate)
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = SoftMint
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(11.dp)
                             ) {
-                                endDate = selected
+                                Text(
+                                    "ייווצרו $dayCount ימים אוטומטית",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D56)
+                                )
+                                Text(
+                                    "לכל יום יהיה יעד קבוע לפי טווח התאריכים.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
                             }
                         }
-                    )
-                }
-
-                item {
-                    TripDatePickerField(
-                        label = "תאריך סיום",
-                        value = endDate,
-                        minimumDate = startDate,
-                        onValueChange = {
-                            endDate = it
-                        }
-                    )
-                }
-
-                if (
-                    startDate.isNotBlank() &&
-                    endDate.isNotBlank() &&
-                    !validDates
-                ) {
-                    item {
-                        Text(
-                            "תאריך הסיום חייב להיות אחרי תאריך ההתחלה",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
                     }
                 }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = tripName.isNotBlank() &&
-                    selectedDestinations.isNotEmpty() &&
-                    validDates,
+                enabled = valid,
                 onClick = {
                     onConfirm(
                         tripName.trim(),
-                        selectedDestinations.toList(),
-                        startDate,
-                        endDate
+                        stays.sortedBy { it.startDate }
                     )
                 }
             ) {
-                Text("יצירת טיול")
+                Text(
+                    if (existingTrip == null) {
+                        "יצירת טיול"
+                    } else {
+                        "שמירת שינויים"
+                    }
+                )
             }
         },
         dismissButton = {
@@ -609,6 +690,205 @@ private fun NewTripDialog(
             }
         }
     )
+}
+
+@Composable
+private fun DestinationStayEditorCard(
+    stay: DestinationStay,
+    onChange: (DestinationStay) -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        border = BorderStroke(1.dp, Color(0xFFE3E9F0))
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("📍")
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stay.destination,
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    SmallDeleteIcon(Modifier.size(27.dp))
+                }
+            }
+
+            TripDatePickerField(
+                label = "מהתאריך",
+                value = stay.startDate,
+                onValueChange = { selected ->
+                    val end = if (
+                        stay.endDate.isBlank() ||
+                        runCatching {
+                            LocalDate.parse(stay.endDate)
+                                .isBefore(LocalDate.parse(selected))
+                        }.getOrDefault(false)
+                    ) {
+                        selected
+                    } else {
+                        stay.endDate
+                    }
+                    onChange(
+                        stay.copy(
+                            startDate = selected,
+                            endDate = end
+                        )
+                    )
+                }
+            )
+
+            TripDatePickerField(
+                label = "עד התאריך",
+                value = stay.endDate,
+                minimumDate = stay.startDate,
+                onValueChange = {
+                    onChange(stay.copy(endDate = it))
+                }
+            )
+        }
+    }
+}
+
+private fun suggestedNextStartDate(
+    stays: List<DestinationStay>
+): String {
+    val latestEnd = stays
+        .mapNotNull {
+            runCatching {
+                LocalDate.parse(it.endDate)
+            }.getOrNull()
+        }
+        .maxOrNull()
+
+    return (latestEnd?.plusDays(1) ?: LocalDate.now()).toString()
+}
+
+private fun validateDestinationStays(
+    stays: List<DestinationStay>
+): String? {
+    if (stays.isEmpty()) {
+        return "יש להוסיף לפחות יעד אחד."
+    }
+
+    val parsed = stays.map { stay ->
+        val start = runCatching {
+            LocalDate.parse(stay.startDate)
+        }.getOrNull()
+            ?: return "יש לבחור תאריך התחלה לכל יעד."
+
+        val end = runCatching {
+            LocalDate.parse(stay.endDate)
+        }.getOrNull()
+            ?: return "יש לבחור תאריך סיום לכל יעד."
+
+        if (end.isBefore(start)) {
+            return "תאריך הסיום של ${stay.destination} מוקדם מתאריך ההתחלה."
+        }
+
+        Triple(stay, start, end)
+    }.sortedBy { it.second }
+
+    parsed.zipWithNext().forEach { (first, second) ->
+        if (!second.second.isAfter(first.third)) {
+            return "טווחי היעדים חופפים. כל יום יכול להיות משויך ליעד אחד בלבד."
+        }
+
+        if (second.second.isAfter(first.third.plusDays(1))) {
+            return "יש פער בין ${first.first.destination} ל-${second.first.destination}. יש לשמור רצף תאריכים מלא."
+        }
+    }
+
+    return null
+}
+
+private fun inclusiveDayCount(
+    startDate: String,
+    endDate: String
+): Int {
+    val start = runCatching {
+        LocalDate.parse(startDate)
+    }.getOrNull() ?: return 0
+    val end = runCatching {
+        LocalDate.parse(endDate)
+    }.getOrNull() ?: return 0
+
+    return (end.toEpochDay() - start.toEpochDay() + 1)
+        .toInt()
+        .coerceAtLeast(0)
+}
+
+private fun buildDaysFromDestinationStays(
+    stays: List<DestinationStay>,
+    existingDays: List<TripDay>
+): List<TripDay> {
+    val existingByDate = existingDays.associateBy { it.date }
+    val result = mutableListOf<TripDay>()
+
+    stays.sortedBy { it.startDate }.forEach { stay ->
+        val start = LocalDate.parse(stay.startDate)
+        val end = LocalDate.parse(stay.endDate)
+        var date = start
+
+        while (!date.isAfter(end)) {
+            val dateText = date.toString()
+            val existing = existingByDate[dateText]
+            val city = stay.destination.substringBefore(",").trim()
+
+            result += if (existing != null) {
+                existing.copy(
+                    date = dateText,
+                    destination = stay.destination,
+                    title = existing.title.ifBlank {
+                        "יום ב$city"
+                    }
+                )
+            } else {
+                TripDay(
+                    id = UUID.randomUUID().toString(),
+                    date = dateText,
+                    title = "יום ב$city",
+                    imageKey = destinationImageKey(stay.destination),
+                    activities = emptyList(),
+                    destination = stay.destination
+                )
+            }
+
+            date = date.plusDays(1)
+        }
+    }
+
+    return result.sortedBy { it.date }
+}
+
+private fun destinationImageKey(destination: String): String {
+    val value = destination.lowercase()
+    return when {
+        "אי " in value ||
+            "פוקט" in value ||
+            "רודוס" in value ||
+            "מיקונוס" in value ||
+            "איביזה" in value ||
+            "זנזיבר" in value -> "island"
+        "דובאי" in value ||
+            "ניו יורק" in value ||
+            "לונדון" in value ||
+            "פריז" in value -> "city"
+        else -> "city"
+    }
 }
 
 @Composable
@@ -630,12 +910,13 @@ private fun TripDatePickerField(
             val dialog = DatePickerDialog(
                 context,
                 { _, year, month, day ->
-                    val selected = LocalDate.of(
-                        year,
-                        month + 1,
-                        day
+                    onValueChange(
+                        LocalDate.of(
+                            year,
+                            month + 1,
+                            day
+                        ).toString()
                     )
-                    onValueChange(selected.toString())
                 },
                 initialDate.year,
                 initialDate.monthValue - 1,
@@ -695,6 +976,7 @@ private fun TripsScreen(
     modifier: Modifier
 ) {
     var importText by remember { mutableStateOf<String?>(null) }
+    var editingTrip by remember { mutableStateOf<Trip?>(null) }
 
     LazyColumn(
         modifier = modifier
@@ -738,6 +1020,15 @@ private fun TripsScreen(
                         emoji = if (state.currentTripId == trip.id) "✓" else "✈️",
                         onClick = { onStateChange(state.copy(currentTripId = trip.id)) },
                         color = if (state.currentTripId == trip.id) Mint else Sky,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    SoftActionButton(
+                        text = "עריכה",
+                        emoji = "✏️",
+                        onClick = { editingTrip = trip },
+                        container = SoftSun,
+                        contentColor = Color(0xFF8F6500),
                         modifier = Modifier.weight(1f)
                     )
 
@@ -796,6 +1087,40 @@ private fun TripsScreen(
             }
         )
     }
+
+    editingTrip?.let { tripToEdit ->
+        NewTripDialog(
+            existingTrip = tripToEdit,
+            onDismiss = { editingTrip = null },
+            onConfirm = { name, stays ->
+                val normalizedStays = stays.sortedBy { it.startDate }
+                val generatedDays = buildDaysFromDestinationStays(
+                    stays = normalizedStays,
+                    existingDays = tripToEdit.days
+                )
+                val validDayIds = generatedDays.map { it.id }.toSet()
+                val destinations = normalizedStays
+                    .map { it.destination }
+                    .distinct()
+
+                val updatedTrip = tripToEdit.copy(
+                    name = name,
+                    destination = destinations.joinToString(" • "),
+                    destinationStops = destinations,
+                    destinationStays = normalizedStays,
+                    startDate = normalizedStays.first().startDate,
+                    endDate = normalizedStays.last().endDate,
+                    days = generatedDays,
+                    restaurants = tripToEdit.restaurants.filter {
+                        it.dayId == null || it.dayId in validDayIds
+                    }
+                )
+
+                onStateChange(state.replaceTrip(updatedTrip))
+                editingTrip = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -805,7 +1130,6 @@ private fun DaysScreen(
     onSelectDay: (String) -> Unit,
     modifier: Modifier
 ) {
-    var addDay by remember { mutableStateOf(false) }
     var editingDay by remember { mutableStateOf<TripDay?>(null) }
 
     Column(
@@ -824,13 +1148,18 @@ private fun DaysScreen(
         DynamicClockBar(trip)
         Spacer(Modifier.height(10.dp))
 
-        AccentButton(
-            text = "הוספת יום",
-            emoji = "＋",
-            onClick = { addDay = true },
-            color = Sky,
-            modifier = Modifier.fillMaxWidth()
-        )
+        SectionCard(containerColor = SoftBlue) {
+            Text(
+                "הימים נוצרים אוטומטית לפי יעדי הטיול והתאריכים.",
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+            Text(
+                "כדי לשנות תאריכים או להוסיף יעד, ערוך את פרטי הטיול במסך הטיולים.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
+        }
 
         Spacer(Modifier.height(10.dp))
 
@@ -879,6 +1208,15 @@ private fun DaysScreen(
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.labelLarge
                             )
+                            if (day.destination.isNotBlank()) {
+                                Text(
+                                    text = "📍 ${day.destination}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Aqua,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                             Text(
                                 text = day.title,
                                 style = MaterialTheme.typography.titleSmall,
@@ -903,45 +1241,12 @@ private fun DaysScreen(
                             ) {
                                 SmallEditIcon(Modifier.size(28.dp))
                             }
-                            IconButton(
-                                onClick = {
-                                    onStateChange(
-                                        trip.copy(
-                                            days = trip.days.filterNot { it.id == day.id },
-                                            restaurants = trip.restaurants.filterNot { it.dayId == day.id }
-                                        )
-                                    )
-                                },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                SmallDeleteIcon(Modifier.size(28.dp))
-                            }
+
                         }
                     }
                 }
             }
         }
-    }
-
-    if (addDay) {
-        SimpleTextDialog(
-            title = "יום חדש",
-            fields = listOf("תאריך YYYY-MM-DD", "כותרת"),
-            onDismiss = { addDay = false },
-            onConfirm = { values ->
-                onStateChange(
-                    trip.copy(
-                        days = trip.days + TripDay(
-                            id = UUID.randomUUID().toString(),
-                            date = values[0],
-                            title = values[1],
-                            imageKey = "city"
-                        )
-                    )
-                )
-                addDay = false
-            }
-        )
     }
 
     editingDay?.let { day ->
@@ -964,7 +1269,6 @@ private fun EditDayDialog(
     onDismiss: () -> Unit,
     onConfirm: (TripDay) -> Unit
 ) {
-    var date by remember(day.id) { mutableStateOf(day.date) }
     var title by remember(day.id) { mutableStateOf(day.title) }
 
     AlertDialog(
@@ -972,11 +1276,14 @@ private fun EditDayDialog(
         title = { Text("עריכת יום") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = date,
-                    onValueChange = { date = it },
-                    label = { Text("תאריך") },
-                    singleLine = true
+                Text(
+                    "📍 ${day.destination.ifBlank { "יעד לא משויך" }}",
+                    color = Aqua,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    day.date,
+                    color = TextSecondary
                 )
                 OutlinedTextField(
                     value = title,
@@ -987,7 +1294,7 @@ private fun EditDayDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(day.copy(date = date, title = title)) }
+                onClick = { onConfirm(day.copy(title = title)) }
             ) {
                 Text("שמירה")
             }
@@ -1030,6 +1337,13 @@ private fun DayDetailScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text(day.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(day.date, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                if (day.destination.isNotBlank()) {
+                    Text(
+                        "📍 ${day.destination}",
+                        color = Aqua,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
             IconButton(onClick = { quickAddActivity = true }) {
                 Icon(Icons.Default.AddCircle, "הוספת פעילות מהירה", tint = Sky)

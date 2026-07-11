@@ -19,12 +19,21 @@ data class ActivityItem(
 )
 
 @Serializable
+data class DestinationStay(
+    val id: String,
+    val destination: String,
+    val startDate: String,
+    val endDate: String
+)
+
+@Serializable
 data class TripDay(
     val id: String,
     val date: String,
     val title: String,
     val imageKey: String = "city",
-    val activities: List<ActivityItem> = emptyList()
+    val activities: List<ActivityItem> = emptyList(),
+    val destination: String = ""
 )
 
 @Serializable
@@ -97,7 +106,8 @@ data class Trip(
     val documents: List<TripDocument> = emptyList(),
     val packingItems: List<PackingItem> = emptyList(),
     val packingCategories: List<String> = emptyList(),
-    val offlineMode: Boolean = false
+    val offlineMode: Boolean = false,
+    val destinationStays: List<DestinationStay> = emptyList()
 )
 
 @Serializable

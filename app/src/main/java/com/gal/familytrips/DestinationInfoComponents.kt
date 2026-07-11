@@ -367,7 +367,12 @@ object DayDestinationResolver {
             return cache[cacheKey]
         }
 
-        val candidates = buildCandidates(trip, day)
+        val candidates = (
+            listOf(day.destination) +
+                buildCandidates(trip, day)
+            )
+            .filter { it.isNotBlank() }
+            .distinct()
 
         for (candidate in candidates) {
             val result = DestinationResolver.resolve(candidate)
