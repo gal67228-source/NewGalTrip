@@ -1,40 +1,46 @@
-# Gal Family Trips – Clean Baseline
 
-זהו Repository חדש ונקי. אין להעלות אותו לתוך המאגר הישן.
+package com.gal.familytrips
 
-## יצירת Repository חדש
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 
-1. ב-GitHub לחץ New repository.
-2. שם מומלץ:
-   `GalFamilyTrips-Clean`
-3. אל תיצור README, .gitignore או License דרך GitHub.
-4. חלץ את קובץ ה-ZIP.
-5. העלה את כל הקבצים והתיקיות שבתוכו ישירות לשורש המאגר.
+val Navy = Color(0xFF17324D)
+val Sky = Color(0xFF3B82F6)
+val Aqua = Color(0xFF25B6C8)
+val Coral = Color(0xFFFF7A66)
+val Sun = Color(0xFFFFC857)
+val Mint = Color(0xFF74C69D)
+val Lavender = Color(0xFF9B8AFB)
+val SoftBlue = Color(0xFFEAF3FF)
+val SoftAqua = Color(0xFFE8FAFC)
+val SoftCoral = Color(0xFFFFEFEC)
+val SoftSun = Color(0xFFFFF7DC)
+val SoftMint = Color(0xFFEAF8F0)
+val SoftLavender = Color(0xFFF1EEFF)
+val Background = Color(0xFFF7F9FC)
+val CardWhite = Color(0xFFFFFFFF)
+val TextPrimary = Color(0xFF1D2733)
+val TextSecondary = Color(0xFF68778A)
 
-בשורש המאגר צריך לראות מיד:
+private val AppColors = lightColorScheme(
+    primary = Sky,
+    onPrimary = Color.White,
+    secondary = Aqua,
+    onSecondary = Color.White,
+    tertiary = Coral,
+    background = Background,
+    surface = CardWhite,
+    onSurface = TextPrimary,
+    onBackground = TextPrimary,
+    outline = Color(0xFFD7E0EA)
+)
 
-- `.github`
-- `app`
-- `settings.gradle`
-- `build.gradle`
-- `gradle.properties`
-- `README_HE.md`
-
-אסור שתהיה תיקייה חיצונית נוספת בשם `GalFamilyTrips_CleanRepo`.
-
-## בניית APK
-
-1. פתח Actions.
-2. בחר `Build Clean Android APK`.
-3. לחץ Run workflow.
-4. הורד את:
-   `Gal-Family-Trips-Clean-Baseline-APK`
-
-## מטרת הגרסה
-
-- לוודא שה-APK מתקמפל.
-- לוודא שהאפליקציה נפתחת.
-- לוודא שאין בעיית התראות או קבצים ישנים.
-
-רק לאחר שהגרסה הזו נפתחת בטלפון, נעביר אליה בהדרגה:
-מסמכים, מסעדות, מלונות, Maps, Waze, תקציב ו-AI.
+@Composable
+fun GalTripsTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = AppColors,
+        typography = Typography(),
+        content = content
+    )
+}

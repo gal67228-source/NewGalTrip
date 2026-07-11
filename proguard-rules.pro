@@ -1,74 +1,73 @@
-name: Build Clean Android APK
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+    id 'org.jetbrains.kotlin.plugin.serialization'
+}
 
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main, master ]
+android {
+    namespace 'com.gal.familytrips'
+    compileSdk 35
 
-permissions:
-  contents: read
+    defaultConfig {
+        applicationId 'com.gal.familytrips'
+        minSdk 26
+        targetSdk 35
+        versionCode 11
+        versionName '2.4.0-travel-info'
+    }
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
 
-      - name: Verify clean repository structure
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f settings.gradle
-          test -f build.gradle
-          test -f gradle.properties
-          test -f app/build.gradle
-          test -f app/src/main/java/com/gal/familytrips/MainActivity.kt
+    packaging {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
 
-          echo "Repository root:"
-          pwd
-          echo "Gradle files:"
-          find . -maxdepth 3 -type f             \( -name 'settings.gradle*' -o -name 'build.gradle*' -o -name 'gradle.properties' \)             -print | sort
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
 
-          COUNT="$(find . -type f \( -name settings.gradle -o -name settings.gradle.kts \) | wc -l)"
-          test "$COUNT" -eq 1
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
 
-          grep -q '^android.useAndroidX=true$' gradle.properties
+kotlin {
+    jvmToolchain(17)
+}
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+dependencies {
+    implementation platform('androidx.compose:compose-bom:2024.12.01')
+    implementation 'androidx.activity:activity-compose:1.10.0'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'androidx.core:core-ktx:1.15.0'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+    implementation 'androidx.datastore:datastore-preferences:1.1.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.7'
+    implementation 'androidx.compose.material:material-icons-extended'
 
-      - name: Install SDK 35
-        shell: bash
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Set up Gradle 8.10.2
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
-
-      - name: Build APK
-        run: gradle --no-daemon --stacktrace clean assembleDebug
-
-      - name: Verify APK
-        shell: bash
-        run: |
-          test -f app/build/outputs/apk/debug/app-debug.apk
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gal-Family-Trips-Clean-Baseline-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 30
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+}
