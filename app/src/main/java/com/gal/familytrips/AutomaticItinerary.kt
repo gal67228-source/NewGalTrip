@@ -10,6 +10,7 @@ import java.time.temporal.ChronoUnit
 private const val AUTO_FLIGHT_PREFIX = "auto-flight-"
 private const val AUTO_MEAL_PREFIX = "auto-meal-"
 private const val AUTO_HOTEL_TRANSFER_PREFIX = "auto-hotel-transfer-"
+private const val AUTO_HOTEL_STAY_PREFIX = "auto-hotel-stay-"
 
 fun rebuildAutomaticItinerary(trip: Trip): Trip {
     val cleanedDays = trip.days.map { day ->
@@ -17,7 +18,8 @@ fun rebuildAutomaticItinerary(trip: Trip): Trip {
             activities = day.activities.filterNot { activity ->
                 activity.id.startsWith(AUTO_FLIGHT_PREFIX) ||
                     activity.id.startsWith(AUTO_MEAL_PREFIX) ||
-                    activity.id.startsWith(AUTO_HOTEL_TRANSFER_PREFIX)
+                    activity.id.startsWith(AUTO_HOTEL_TRANSFER_PREFIX) ||
+                    activity.id.startsWith(AUTO_HOTEL_STAY_PREFIX)
             }
         )
     }
@@ -187,6 +189,44 @@ private fun addHotelMealSkeleton(
 
     var result = trip
     var date = checkIn
+
+    val checkInActivity = ActivityItem(
+        id = "$AUTO_HOTEL_STAY_PREFIX${hotel.id}-check-in",
+        time = "15:00",
+        name = "צ׳ק־אין למלון",
+        location = hotel.address.ifBlank { hotel.name },
+        transport = "קבלה במלון",
+        duration = "30 דקות",
+        notes = "נוצר אוטומטית מתוך הזמנת המלון",
+        mapsUrl = hotel.mapsUrl.ifBlank {
+            googleSearchUrl(hotel.address.ifBlank { hotel.name })
+        }
+    )
+
+    val checkOutActivity = ActivityItem(
+        id = "$AUTO_HOTEL_STAY_PREFIX${hotel.id}-check-out",
+        time = "11:00",
+        name = "צ׳ק־אאוט מהמלון",
+        location = hotel.address.ifBlank { hotel.name },
+        transport = "קבלה במלון",
+        duration = "30 דקות",
+        notes = "נוצר אוטומטית מתוך הזמנת המלון",
+        mapsUrl = hotel.mapsUrl.ifBlank {
+            googleSearchUrl(hotel.address.ifBlank { hotel.name })
+        }
+    )
+
+    result = appendActivities(
+        trip = result,
+        date = hotel.checkIn,
+        activities = listOf(checkInActivity)
+    )
+
+    result = appendActivities(
+        trip = result,
+        date = hotel.checkOut,
+        activities = listOf(checkOutActivity)
+    )
 
     if (hotel.includeTransfer) {
         val transferActivity = ActivityItem(

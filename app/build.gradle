@@ -13,8 +13,8 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 31
-        versionName '3.4.2-drag-compatibility-fix'
+        versionCode 32
+        versionName '3.5.0-today-hotel-checkin-checkout'
     }
 
     buildFeatures {

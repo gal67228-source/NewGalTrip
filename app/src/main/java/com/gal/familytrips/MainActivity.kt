@@ -135,14 +135,15 @@ fun GalTripsApp(
             ) {
                 listOf(
                     Triple(Icons.Default.Home, "טיולים", 0),
-                    Triple(Icons.Default.Flight, "טיסות", 1),
-                    Triple(Icons.Default.Hotel, "מלונות", 2),
-                    Triple(Icons.Default.Today, "ימים", 3),
-                    Triple(Icons.Default.Restaurant, "מסעדות", 4),
-                    Triple(Icons.Default.AttachMoney, "תקציב", 5),
-                    Triple(Icons.Default.Description, "מסמכים", 6),
-                    Triple(Icons.Default.Info, "מידע", 7),
-                    Triple(Icons.Default.Luggage, "ציוד", 8)
+                    Triple(Icons.Default.WbSunny, "היום", 1),
+                    Triple(Icons.Default.Flight, "טיסות", 2),
+                    Triple(Icons.Default.Hotel, "מלונות", 3),
+                    Triple(Icons.Default.Today, "ימים", 4),
+                    Triple(Icons.Default.Restaurant, "מסעדות", 5),
+                    Triple(Icons.Default.AttachMoney, "תקציב", 6),
+                    Triple(Icons.Default.Description, "מסמכים", 7),
+                    Triple(Icons.Default.Info, "מידע", 8),
+                    Triple(Icons.Default.Luggage, "ציוד", 9)
                 ).forEach { (icon,label,index) ->
                     NavigationBarItem(
                         selected = tab == index,
@@ -176,7 +177,16 @@ fun GalTripsApp(
                     Modifier.padding(padding)
                 )
 
-                1 -> FlightsScreen(
+                1 -> TodayScreen(
+                    trip = trip,
+                    onTripChange = {
+                        onStateChange(state.replaceTrip(it))
+                    },
+                    onOpenUrl = onOpenUrl,
+                    modifier = Modifier.padding(padding)
+                )
+
+                2 -> FlightsScreen(
                     trip = trip,
                     onTripChange = {
                         onStateChange(state.replaceTrip(it))
@@ -184,14 +194,14 @@ fun GalTripsApp(
                     modifier = Modifier.padding(padding)
                 )
 
-                2 -> HotelsScreen(
+                3 -> HotelsScreen(
                     trip,
                     { onStateChange(state.replaceTrip(it)) },
                     onOpenUrl,
                     Modifier.padding(padding)
                 )
 
-                3 -> if (selectedDayId == null) {
+                4 -> if (selectedDayId == null) {
                     DaysScreen(
                         trip,
                         onStateChange = { updated ->
@@ -213,26 +223,26 @@ fun GalTripsApp(
                     )
                 }
 
-                4 -> RestaurantsScreen(
+                5 -> RestaurantsScreen(
                     trip,
                     { onStateChange(state.replaceTrip(it)) },
                     onOpenUrl,
                     Modifier.padding(padding)
                 )
 
-                5 -> ExpensesScreen(
+                6 -> ExpensesScreen(
                     trip,
                     { onStateChange(state.replaceTrip(it)) },
                     Modifier.padding(padding)
                 )
 
-                6 -> DocumentsScreen(
+                7 -> DocumentsScreen(
                     trip,
                     { onStateChange(state.replaceTrip(it)) },
                     Modifier.padding(padding)
                 )
 
-                7 -> GeneralInfoScreen(
+                8 -> GeneralInfoScreen(
                     trip = trip,
                     onTripChange = {
                         onStateChange(state.replaceTrip(it))
@@ -240,7 +250,7 @@ fun GalTripsApp(
                     modifier = Modifier.padding(padding)
                 )
 
-                8 -> PackingScreen(
+                9 -> PackingScreen(
                     trip = trip,
                     onTripChange = {
                         onStateChange(state.replaceTrip(it))
