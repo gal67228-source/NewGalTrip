@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
@@ -37,7 +39,7 @@ class MainActivity : ComponentActivity() {
         store = TripStore(this)
 
         setContent {
-            MaterialTheme {
+            GalTripsTheme {
                 var state by remember { mutableStateOf<AppState?>(null) }
 
                 LaunchedEffect(Unit) {
@@ -101,7 +103,7 @@ fun GalTripsApp(
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
+            NavigationBar(containerColor = CardWhite, tonalElevation = 10.dp) {
                 listOf(
                     Triple(Icons.Default.Home, "טיולים", 0),
                     Triple(Icons.Default.Today, "ימים", 1),
@@ -176,10 +178,17 @@ private fun TripsScreen(
 ) {
     var importText by remember { mutableStateOf<String?>(null) }
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("הטיולים שלי", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+        item {
+            GradientHeader(
+                title = "הטיולים שלי",
+                subtitle = "כל החופשות במקום אחד",
+                emoji = "🌍",
+                start = Lavender,
+                end = Navy
+            )
+        }
         items(state.trips) { trip ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionCard(containerColor = SoftLavender) {
                     Text(trip.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("${trip.destination} · ${trip.startDate}–${trip.endDate}")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -213,14 +222,24 @@ private fun DaysScreen(trip: Trip, onStateChange: (Trip) -> Unit, onSelectDay: (
     var addDay by remember { mutableStateOf(false) }
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("ימי הטיול", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                IconButton(onClick = { addDay = true }) { Icon(Icons.Default.Add, null) }
-            }
+            GradientHeader(
+                title = "ימי הטיול",
+                subtitle = "מסלול מסודר לכל יום",
+                emoji = "📅",
+                start = Sky,
+                end = Navy
+            )
+            AccentButton("הוספת יום", "＋", { addDay = true }, color = Sky, modifier = Modifier.fillMaxWidth())
         }
         items(trip.days.sortedBy { it.date }) { day ->
-            Card(onClick = { onSelectDay(day.id) }, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+            Card(
+                onClick = { onSelectDay(day.id) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = SoftBlue),
+                elevation = CardDefaults.cardElevation(5.dp)
+            ) {
+                Column(Modifier.padding(18.dp)) {
                     Text(day.date, fontWeight = FontWeight.Bold)
                     Text(day.title)
                     Text("${day.activities.size} פעילויות", style = MaterialTheme.typography.bodySmall)
@@ -256,7 +275,7 @@ private fun DayDetailScreen(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
+            SoftActionButton("מפה יומית", "🗺️", onClick = {
                 val points = day.activities.mapNotNull { it.location.ifBlank { null } }
                 if (points.isNotEmpty()) {
                     val origin = points.first()
@@ -266,12 +285,12 @@ private fun DayDetailScreen(
                     if (waypoints.isNotBlank()) url += "&waypoints=${Uri.encode(waypoints)}"
                     onOpenUrl(url)
                 }
-            }) { Text("מפה יומית מלאה") }
-            OutlinedButton(onClick = {
+            }, container = SoftBlue, contentColor = Sky)
+            SoftActionButton("מסלול חי", "📍", onClick = {
                 day.activities.firstOrNull { !it.completed }?.let {
                     onOpenUrl("https://www.google.com/maps/search/?api=1&query=${Uri.encode(it.location.ifBlank { it.name })}")
                 }
-            }) { Text("מסלול חי") }
+            }, container = SoftAqua, contentColor = Aqua)
         }
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
@@ -337,10 +356,14 @@ private fun HotelsScreen(trip: Trip, onTripChange: (Trip) -> Unit, onOpenUrl: (S
     var add by remember { mutableStateOf(false) }
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("מלונות", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                IconButton(onClick = { add = true }) { Icon(Icons.Default.Add, null) }
-            }
+            GradientHeader(
+                title = "מלונות",
+                subtitle = "מקומות הלינה ותאריכי השהייה",
+                emoji = "🏨",
+                start = Aqua,
+                end = Navy
+            )
+            AccentButton("הוספת מלון", "＋", { add = true }, color = Aqua, modifier = Modifier.fillMaxWidth())
         }
         items(trip.hotels) { h ->
             Card(Modifier.fillMaxWidth()) {
@@ -371,10 +394,14 @@ private fun RestaurantsScreen(trip: Trip, onTripChange: (Trip) -> Unit, onOpenUr
     var add by remember { mutableStateOf(false) }
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("מסעדות", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                IconButton(onClick = { add = true }) { Icon(Icons.Default.Add, null) }
-            }
+            GradientHeader(
+                title = "מסעדות",
+                subtitle = "מקומות מומלצים ליד המסלול",
+                emoji = "🍽️",
+                start = Coral,
+                end = Color(0xFFB84A3A)
+            )
+            AccentButton("הוספת מסעדה", "＋", { add = true }, color = Coral, modifier = Modifier.fillMaxWidth())
         }
         items(trip.restaurants) { r ->
             Card(Modifier.fillMaxWidth()) {
@@ -406,10 +433,14 @@ private fun ExpensesScreen(trip: Trip, onTripChange: (Trip) -> Unit, modifier: M
     val sums = trip.expenses.groupBy { it.currency }.mapValues { e -> e.value.sumOf { it.amount } }
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("תקציב", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                IconButton(onClick = { add = true }) { Icon(Icons.Default.Add, null) }
-            }
+            GradientHeader(
+                title = "תקציב",
+                subtitle = "מעקב אחר הוצאות הטיול",
+                emoji = "💰",
+                start = Sun,
+                end = Color(0xFFE79A18)
+            )
+            AccentButton("הוספת הוצאה", "＋", { add = true }, color = Color(0xFFE7A62D), modifier = Modifier.fillMaxWidth())
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -451,10 +482,14 @@ private fun DocumentsScreen(trip: Trip, onTripChange: (Trip) -> Unit, modifier: 
 
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("מסמכים", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                IconButton(onClick = { launcher.launch(arrayOf("*/*")) }) { Icon(Icons.Default.Add, null) }
-            }
+            GradientHeader(
+                title = "מסמכים",
+                subtitle = "כרטיסים, הזמנות וקבצים חשובים",
+                emoji = "🎫",
+                start = Mint,
+                end = Color(0xFF378A63)
+            )
+            AccentButton("הוספת מסמך", "＋", { launcher.launch(arrayOf("*/*")) }, color = Mint, modifier = Modifier.fillMaxWidth())
         }
         items(trip.documents) { d ->
             Card(Modifier.fillMaxWidth()) {
