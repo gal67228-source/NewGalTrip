@@ -9,13 +9,15 @@ import java.time.temporal.ChronoUnit
 
 private const val AUTO_FLIGHT_PREFIX = "auto-flight-"
 private const val AUTO_MEAL_PREFIX = "auto-meal-"
+private const val AUTO_HOTEL_TRANSFER_PREFIX = "auto-hotel-transfer-"
 
 fun rebuildAutomaticItinerary(trip: Trip): Trip {
     val cleanedDays = trip.days.map { day ->
         day.copy(
             activities = day.activities.filterNot { activity ->
                 activity.id.startsWith(AUTO_FLIGHT_PREFIX) ||
-                    activity.id.startsWith(AUTO_MEAL_PREFIX)
+                    activity.id.startsWith(AUTO_MEAL_PREFIX) ||
+                    activity.id.startsWith(AUTO_HOTEL_TRANSFER_PREFIX)
             }
         )
     }
@@ -185,6 +187,36 @@ private fun addHotelMealSkeleton(
 
     var result = trip
     var date = checkIn
+
+    if (hotel.includeTransfer) {
+        val transferActivity = ActivityItem(
+            id = "$AUTO_HOTEL_TRANSFER_PREFIX${hotel.id}",
+            time = hotel.transferTime,
+            name = "הסעה למלון",
+            location = hotel.address.ifBlank { hotel.name },
+            transport = "הסעה / מונית",
+            directions = buildString {
+                if (hotel.transferFrom.isNotBlank()) {
+                    append("מ-")
+                    append(hotel.transferFrom)
+                    append(" אל ")
+                }
+                append(hotel.name)
+            },
+            duration = "${hotel.transferMinutes} דקות",
+            notes = "נוצר אוטומטית מתוך פרטי המלון",
+            mapsUrl = googleDirectionsUrl(
+                origin = hotel.transferFrom,
+                destination = hotel.address.ifBlank { hotel.name }
+            )
+        )
+
+        result = appendActivities(
+            trip = result,
+            date = hotel.checkIn,
+            activities = listOf(transferActivity)
+        )
+    }
 
     while (!date.isAfter(checkOut)) {
         val meals = mutableListOf<ActivityItem>()

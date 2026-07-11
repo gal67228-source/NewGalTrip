@@ -61,7 +61,11 @@ data class Hotel(
     val address: String = "",
     val mapsUrl: String = "",
     val notes: String = "",
-    val boardBasis: String = "לינה בלבד"
+    val boardBasis: String = "לינה בלבד",
+    val includeTransfer: Boolean = false,
+    val transferFrom: String = "",
+    val transferTime: String = "15:00",
+    val transferMinutes: Int = 45
 )
 
 @Serializable
