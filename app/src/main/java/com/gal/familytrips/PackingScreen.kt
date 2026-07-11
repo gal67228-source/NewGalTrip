@@ -24,13 +24,22 @@ fun PackingScreen(
     onTripChange: (Trip) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showAdd by remember { mutableStateOf(false) }
+    var showAddItem by remember { mutableStateOf(false) }
+    var showAddCategory by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<PackingItem?>(null) }
     var selectedCategory by remember { mutableStateOf("הכול") }
 
-    val categories = listOf("הכול") +
-        trip.packingItems.map { it.category }.distinct().sorted()
+    val baseCategories = if (trip.packingCategories.isEmpty()) {
+        listOf("מסמכים", "כסף", "אלקטרוניקה", "בגדים", "רחצה", "בריאות", "ילדים", "טיול יומי", "כללי")
+    } else {
+        trip.packingCategories
+    }
 
+    val categories = (
+        baseCategories + trip.packingItems.map { it.category }
+    ).filter { it.isNotBlank() }.distinct().sorted()
+
+    val tabs = listOf("הכול") + categories
     val filtered = if (selectedCategory == "הכול") {
         trip.packingItems
     } else {
@@ -44,7 +53,7 @@ fun PackingScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(bottom = 28.dp)
     ) {
@@ -72,10 +81,9 @@ fun PackingScreen(
                             color = TextSecondary
                         )
                     }
-
                     Box(
                         modifier = Modifier
-                            .size(50.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(CardWhite),
                         contentAlignment = Alignment.Center
@@ -95,24 +103,37 @@ fun PackingScreen(
                     trackColor = CardWhite
                 )
 
-                AccentButton(
-                    text = "הוספת פריט",
-                    emoji = "＋",
-                    onClick = { showAdd = true },
-                    color = Lavender,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AccentButton(
+                        text = "הוספת פריט",
+                        emoji = "＋",
+                        onClick = { showAddItem = true },
+                        color = Lavender,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SoftActionButton(
+                        text = "קטגוריה",
+                        emoji = "＋",
+                        onClick = { showAddCategory = true },
+                        container = CardWhite,
+                        contentColor = Lavender,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
 
         item {
             ScrollableTabRow(
-                selectedTabIndex = categories.indexOf(selectedCategory).coerceAtLeast(0),
+                selectedTabIndex = tabs.indexOf(selectedCategory).coerceAtLeast(0),
                 edgePadding = 0.dp,
                 containerColor = Background,
                 divider = {}
             ) {
-                categories.forEach { category ->
+                tabs.forEach { category ->
                     Tab(
                         selected = selectedCategory == category,
                         onClick = { selectedCategory = category },
@@ -144,7 +165,8 @@ fun PackingScreen(
                         trip.copy(
                             packingItems = trip.packingItems.map {
                                 if (it.id == item.id) it.copy(packed = packed) else it
-                            }
+                            },
+                            packingCategories = categories
                         )
                     )
                 },
@@ -152,7 +174,8 @@ fun PackingScreen(
                 onDelete = {
                     onTripChange(
                         trip.copy(
-                            packingItems = trip.packingItems.filterNot { it.id == item.id }
+                            packingItems = trip.packingItems.filterNot { it.id == item.id },
+                            packingCategories = categories
                         )
                     )
                 }
@@ -165,7 +188,8 @@ fun PackingScreen(
                     onClick = {
                         onTripChange(
                             trip.copy(
-                                packingItems = trip.packingItems.map { it.copy(packed = false) }
+                                packingItems = trip.packingItems.map { it.copy(packed = false) },
+                                packingCategories = categories
                             )
                         )
                     },
@@ -178,16 +202,33 @@ fun PackingScreen(
         }
     }
 
-    if (showAdd) {
+    if (showAddItem) {
         PackingEditorDialog(
             title = "פריט חדש",
             item = null,
-            onDismiss = { showAdd = false },
+            categories = categories,
+            onDismiss = { showAddItem = false },
             onConfirm = { newItem ->
                 onTripChange(
-                    trip.copy(packingItems = trip.packingItems + newItem)
+                    trip.copy(
+                        packingItems = trip.packingItems + newItem,
+                        packingCategories = categories
+                    )
                 )
-                showAdd = false
+                showAddItem = false
+            }
+        )
+    }
+
+    if (showAddCategory) {
+        AddPackingCategoryDialog(
+            existing = categories,
+            onDismiss = { showAddCategory = false },
+            onConfirm = { category ->
+                val updated = (categories + category).distinct().sorted()
+                onTripChange(trip.copy(packingCategories = updated))
+                selectedCategory = category
+                showAddCategory = false
             }
         )
     }
@@ -196,13 +237,15 @@ fun PackingScreen(
         PackingEditorDialog(
             title = "עריכת פריט",
             item = item,
+            categories = categories,
             onDismiss = { editing = null },
             onConfirm = { updated ->
                 onTripChange(
                     trip.copy(
                         packingItems = trip.packingItems.map {
                             if (it.id == updated.id) updated else it
-                        }
+                        },
+                        packingCategories = categories
                     )
                 )
                 editing = null
@@ -234,26 +277,16 @@ private fun PackingItemCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Checkbox(
-                checked = item.packed,
-                onCheckedChange = onPackedChange
-            )
-
+            Checkbox(checked = item.packed, onCheckedChange = onPackedChange)
             Spacer(Modifier.width(6.dp))
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     item.name,
                     fontWeight = FontWeight.Bold,
                     color = if (item.packed) Color(0xFF3B6F55) else Navy
                 )
-
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        item.category,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Lavender
-                    )
+                    Text(item.category, style = MaterialTheme.typography.labelSmall, color = Lavender)
                     if (item.quantity > 1) {
                         Text(
                             "כמות: ${item.quantity}",
@@ -262,27 +295,14 @@ private fun PackingItemCard(
                         )
                     }
                 }
-
                 if (item.notes.isNotBlank()) {
-                    Text(
-                        item.notes,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
+                    Text(item.notes, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 }
             }
-
-            IconButton(
-                onClick = onEdit,
-                modifier = Modifier.size(36.dp)
-            ) {
+            IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                 SmallEditIcon(Modifier.size(28.dp))
             }
-
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.size(36.dp)
-            ) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                 SmallDeleteIcon(Modifier.size(28.dp))
             }
         }
@@ -293,11 +313,15 @@ private fun PackingItemCard(
 private fun PackingEditorDialog(
     title: String,
     item: PackingItem?,
+    categories: List<String>,
     onDismiss: () -> Unit,
     onConfirm: (PackingItem) -> Unit
 ) {
     var name by remember(item?.id) { mutableStateOf(item?.name.orEmpty()) }
-    var category by remember(item?.id) { mutableStateOf(item?.category ?: "כללי") }
+    var category by remember(item?.id, categories) {
+        mutableStateOf(item?.category ?: categories.firstOrNull() ?: "כללי")
+    }
+    var categoryMenuOpen by remember { mutableStateOf(false) }
     var quantityText by remember(item?.id) { mutableStateOf((item?.quantity ?: 1).toString()) }
     var notes by remember(item?.id) { mutableStateOf(item?.notes.orEmpty()) }
 
@@ -312,12 +336,32 @@ private fun PackingEditorDialog(
                     label = { Text("שם הפריט") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = { Text("קטגוריה") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { categoryMenuOpen = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("קטגוריה: $category", modifier = Modifier.weight(1f))
+                        Text("⌄")
+                    }
+                    DropdownMenu(
+                        expanded = categoryMenuOpen,
+                        onDismissRequest = { categoryMenuOpen = false }
+                    ) {
+                        categories.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    category = option
+                                    categoryMenuOpen = false
+                                }
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = quantityText,
                     onValueChange = { quantityText = it.filter(Char::isDigit) },
@@ -340,7 +384,7 @@ private fun PackingEditorDialog(
                             PackingItem(
                                 id = item?.id ?: UUID.randomUUID().toString(),
                                 name = name.trim(),
-                                category = category.trim().ifBlank { "כללי" },
+                                category = category,
                                 packed = item?.packed ?: false,
                                 quantity = quantityText.toIntOrNull()?.coerceAtLeast(1) ?: 1,
                                 notes = notes.trim()
@@ -348,14 +392,46 @@ private fun PackingEditorDialog(
                         )
                     }
                 }
-            ) {
-                Text("שמירה")
-            }
+            ) { Text("שמירה") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("ביטול")
-            }
+            TextButton(onClick = onDismiss) { Text("ביטול") }
+        }
+    )
+}
+
+@Composable
+private fun AddPackingCategoryDialog(
+    existing: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    val duplicate = existing.any { it.equals(name.trim(), ignoreCase = true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("קטגוריה חדשה") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("שם הקטגוריה") },
+                supportingText = {
+                    if (duplicate) Text("הקטגוריה כבר קיימת")
+                },
+                isError = duplicate,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank() && !duplicate,
+                onClick = { onConfirm(name.trim()) }
+            ) { Text("הוספה") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("ביטול") }
         }
     )
 }

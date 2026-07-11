@@ -115,7 +115,7 @@ fun GalTripsApp(
             NavigationBar(
                 containerColor = CardWhite,
                 tonalElevation = 10.dp,
-                modifier = Modifier.height(68.dp)
+                modifier = Modifier.height(72.dp)
             ) {
                 listOf(
                     Triple(Icons.Default.Home, "טיולים", 0),
@@ -134,7 +134,7 @@ fun GalTripsApp(
                             Icon(
                                 imageVector = icon,
                                 contentDescription = label,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(29.dp)
                             )
                         },
                         label = null,
@@ -1281,45 +1281,346 @@ private fun RestaurantsScreen(
 }
 
 @Composable
-private fun ExpensesScreen(trip: Trip, onTripChange: (Trip) -> Unit, modifier: Modifier) {
-    var add by remember { mutableStateOf(false) }
-    val sums = trip.expenses.groupBy { it.currency }.mapValues { e -> e.value.sumOf { it.amount } }
-    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun ExpensesScreen(
+    trip: Trip,
+    onTripChange: (Trip) -> Unit,
+    modifier: Modifier
+) {
+    var addCustom by remember { mutableStateOf(false) }
+    var editingTemplate by remember { mutableStateOf<BudgetTemplate?>(null) }
+
+    val templates = suggestedBudgetTemplates(trip)
+    val templateIds = templates.map { it.id }.toSet()
+    val customExpenses = trip.expenses.filterNot { it.id in templateIds }
+    val totals = trip.expenses
+        .filter { it.amount > 0 }
+        .groupBy { it.currency }
+        .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 28.dp)
+    ) {
         item {
             GradientHeader(
                 title = "תקציב",
-                subtitle = "מעקב אחר הוצאות הטיול",
+                subtitle = "סעיפים נוצרים אוטומטית מהמסלול",
                 emoji = "💰",
                 start = Sun,
                 end = Color(0xFFE79A18)
             )
-            AccentButton("הוספת הוצאה", "＋", { add = true }, color = Color(0xFFE7A62D), modifier = Modifier.fillMaxWidth())
         }
+
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("HUF","EUR","ILS").forEach { c ->
-                    AssistChip(onClick = {}, label = { Text("$c ${sums[c] ?: 0.0}") })
+            SectionCard(containerColor = SoftSun) {
+                Text("סיכום הוצאות", fontWeight = FontWeight.Bold)
+                if (totals.isEmpty()) {
+                    Text("עדיין לא הוזנו סכומים", color = TextSecondary)
+                } else {
+                    totals.forEach { (currency, amount) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(currency, color = TextSecondary)
+                            Text(
+                                String.format(java.util.Locale.US, "%.2f", amount),
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                        }
+                    }
                 }
+                AccentButton(
+                    text = "הוצאה נוספת",
+                    emoji = "＋",
+                    onClick = { addCustom = true },
+                    color = Color(0xFFE7A62D),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
-        items(trip.expenses) { e ->
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column { Text(e.title, fontWeight = FontWeight.Bold); Text("${e.category} · ${e.date}") }
-                    Row { Text("${e.amount} ${e.currency}"); IconButton(onClick = {
-                        onTripChange(trip.copy(expenses = trip.expenses.filterNot { it.id == e.id }))
-                    }) { Icon(Icons.Default.Delete, null) } }
+
+        item {
+            Text(
+                "הוצאות מוכנות להזנה",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        items(templates, key = { it.id }) { template ->
+            val saved = trip.expenses.firstOrNull { it.id == template.id }
+            BudgetTemplateCard(
+                template = template,
+                expense = saved,
+                onEnterAmount = { editingTemplate = template },
+                onClear = {
+                    onTripChange(
+                        trip.copy(
+                            expenses = trip.expenses.filterNot { it.id == template.id }
+                        )
+                    )
+                }
+            )
+        }
+
+        if (customExpenses.isNotEmpty()) {
+            item {
+                Text(
+                    "הוצאות נוספות",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        items(customExpenses, key = { it.id }) { expense ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = CardWhite),
+                border = BorderStroke(1.dp, Color(0xFFE3E9F0))
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(expense.title, fontWeight = FontWeight.Bold)
+                        Text(
+                            "${expense.category} · ${expense.date}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+                    Text(
+                        "${expense.amount} ${expense.currency}",
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    IconButton(
+                        onClick = {
+                            onTripChange(
+                                trip.copy(
+                                    expenses = trip.expenses.filterNot { it.id == expense.id }
+                                )
+                            )
+                        }
+                    ) {
+                        SmallDeleteIcon(Modifier.size(28.dp))
+                    }
                 }
             }
         }
     }
-    if (add) {
-        SimpleTextDialog("הוצאה חדשה", listOf("תיאור","סכום","מטבע HUF/EUR/ILS","קטגוריה","תאריך"),
-            { add = false }) { v ->
-            onTripChange(trip.copy(expenses = trip.expenses + Expense(UUID.randomUUID().toString(),v[0],v[1].toDoubleOrNull() ?: 0.0,v[2],v[3],v[4])))
-            add = false
+
+    editingTemplate?.let { template ->
+        val existing = trip.expenses.firstOrNull { it.id == template.id }
+        BudgetAmountDialog(
+            template = template,
+            existing = existing,
+            onDismiss = { editingTemplate = null },
+            onConfirm = { amount, currency ->
+                val updated = Expense(
+                    id = template.id,
+                    title = template.title,
+                    amount = amount,
+                    currency = currency,
+                    category = template.category,
+                    date = template.date
+                )
+                onTripChange(
+                    trip.copy(
+                        expenses = trip.expenses.filterNot { it.id == template.id } + updated
+                    )
+                )
+                editingTemplate = null
+            }
+        )
+    }
+
+    if (addCustom) {
+        SimpleTextDialog(
+            title = "הוצאה נוספת",
+            fields = listOf("תיאור", "סכום", "מטבע", "קטגוריה", "תאריך"),
+            onDismiss = { addCustom = false },
+            onConfirm = { values ->
+                onTripChange(
+                    trip.copy(
+                        expenses = trip.expenses + Expense(
+                            id = UUID.randomUUID().toString(),
+                            title = values[0],
+                            amount = values[1].toDoubleOrNull() ?: 0.0,
+                            currency = values[2].ifBlank { destinationCurrency(trip.destination) },
+                            category = values[3].ifBlank { "כללי" },
+                            date = values[4].ifBlank { trip.startDate }
+                        )
+                    )
+                )
+                addCustom = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun BudgetTemplateCard(
+    template: BudgetTemplate,
+    expense: Expense?,
+    onEnterAmount: () -> Unit,
+    onClear: () -> Unit
+) {
+    val hasAmount = expense != null && expense.amount > 0
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (hasAmount) SoftMint else CardWhite
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (hasAmount) Color(0xFFBFE5D0) else Color(0xFFE3E9F0)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(13.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (hasAmount) CardWhite else SoftSun),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    when (template.category) {
+                        "מלונות" -> "🏨"
+                        "טיסות" -> "✈️"
+                        "תחבורה" -> "🚌"
+                        "אוכל" -> "🍽️"
+                        "אטרקציות" -> "🎫"
+                        "קניות" -> "🛍️"
+                        else -> "💳"
+                    }
+                )
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(template.title, fontWeight = FontWeight.Bold)
+                Text(
+                    "${template.category} · ${template.date}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
+            }
+
+            if (hasAmount) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "${expense!!.amount} ${expense.currency}",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2E7D56)
+                    )
+                    Row {
+                        TextButton(onClick = onEnterAmount) { Text("עריכה") }
+                        IconButton(onClick = onClear, modifier = Modifier.size(32.dp)) {
+                            SmallDeleteIcon(Modifier.size(25.dp))
+                        }
+                    }
+                }
+            } else {
+                FilledTonalButton(
+                    onClick = onEnterAmount,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = SoftSun,
+                        contentColor = Color(0xFF8F6500)
+                    )
+                ) {
+                    Text("הזן סכום")
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun BudgetAmountDialog(
+    template: BudgetTemplate,
+    existing: Expense?,
+    onDismiss: () -> Unit,
+    onConfirm: (Double, String) -> Unit
+) {
+    var amountText by remember(template.id) {
+        mutableStateOf(existing?.amount?.takeIf { it > 0 }?.toString().orEmpty())
+    }
+    var currency by remember(template.id) {
+        mutableStateOf(existing?.currency ?: template.currency)
+    }
+    var menuOpen by remember { mutableStateOf(false) }
+    val currencies = listOf(template.currency, "EUR", "USD", "ILS").distinct()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(template.title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = {
+                        amountText = it.filter { char -> char.isDigit() || char == '.' }
+                    },
+                    label = { Text("סכום") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { menuOpen = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("מטבע: $currency", modifier = Modifier.weight(1f))
+                        Text("⌄")
+                    }
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = { menuOpen = false }
+                    ) {
+                        currencies.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    currency = option
+                                    menuOpen = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = (amountText.toDoubleOrNull() ?: 0.0) >= 0,
+                onClick = {
+                    onConfirm(amountText.toDoubleOrNull() ?: 0.0, currency)
+                }
+            ) { Text("שמירה") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("ביטול") }
+        }
+    )
 }
 
 @Composable
@@ -1329,72 +1630,64 @@ private fun DocumentsScreen(
     modifier: Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var pendingType by remember { mutableStateOf("כללי") }
-
-    val requiredDocs = listOf(
-        Triple("טיסת הלוך W6 2506", "טיסות", "כרטיסי טיסה / Boarding Pass"),
-        Triple("טיסת חזור W6 2327", "טיסות", "כרטיסי טיסה / Boarding Pass"),
-        Triple("Aquaworld Resort", "מלונות", "אישור הזמנה / Voucher"),
-        Triple("7Seasons Apartments", "מלונות", "אישור הזמנה / Voucher"),
-        Triple("הסעה 8.8 למלון", "הסעות", "אישור Welcome Pickups"),
-        Triple("הסעה 11.8 לשדה", "הסעות", "אישור Welcome Pickups"),
-        Triple("MiniPolisz", "אטרקציות", "כרטיס / אישור הזמנה"),
-        Triple("Budapest Zoo", "אטרקציות", "כרטיסים אם נרכשו מראש"),
-        Triple("שייט על הדנובה", "אטרקציות", "Voucher / QR code"),
-        Triple("ביטוח נסיעות", "ביטוח", "פוליסה ומספר חירום"),
-        Triple("צילומי דרכונים", "מסמכים אישיים", "עותק מאובטח לכל נוסע"),
-        Triple("כרטיסי תחבורה / BudapestGO", "תחבורה", "אישור או צילום מסך אם נרכש מראש")
-    )
+    var pendingRequirement by remember { mutableStateOf<DocumentRequirement?>(null) }
+    val requirements = suggestedDocumentRequirements(trip)
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
+        val requirement = pendingRequirement
+        if (uri != null && requirement != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
-                    it,
+                    uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }
             val document = TripDocument(
                 id = UUID.randomUUID().toString(),
-                name = it.lastPathSegment ?: pendingType,
-                uri = it.toString(),
-                type = pendingType
+                name = uri.lastPathSegment ?: requirement.title,
+                uri = uri.toString(),
+                type = requirement.type,
+                notes = requirement.key
             )
             onTripChange(trip.copy(documents = trip.documents + document))
         }
+        pendingRequirement = null
     }
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         item {
             GradientHeader(
                 title = "מסמכים",
-                subtitle = "רשימת חובה לפי ההזמנות בטיול",
+                subtitle = "נוצר אוטומטית מהמלונות והפעילויות",
                 emoji = "🎫",
                 start = Mint,
                 end = Color(0xFF378A63)
             )
 
-            val completed = requiredDocs.count { (_, type, title) ->
-                trip.documents.any { doc ->
-                    doc.type == type ||
-                        doc.name.contains(title.substringBefore(" "), ignoreCase = true)
+            val completed = requirements.count { requirement ->
+                trip.documents.any { document ->
+                    document.notes == requirement.key ||
+                        document.name.contains(requirement.title, ignoreCase = true)
                 }
             }
 
             SectionCard(containerColor = SoftMint) {
                 Text(
-                    "$completed מתוך ${requiredDocs.size} מסמכים נוספו",
+                    "$completed מתוך ${requirements.size} מסמכים נוספו",
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF276B4A)
                 )
                 LinearProgressIndicator(
-                    progress = { completed.toFloat() / requiredDocs.size.toFloat() },
+                    progress = {
+                        if (requirements.isEmpty()) 0f
+                        else completed.toFloat() / requirements.size.toFloat()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     color = Mint,
                     trackColor = CardWhite
@@ -1402,8 +1695,11 @@ private fun DocumentsScreen(
             }
         }
 
-        items(requiredDocs, key = { it.first }) { (title, type, description) ->
-            val matching = trip.documents.filter { it.type == type }
+        items(requirements, key = { it.key }) { requirement ->
+            val matching = trip.documents.filter {
+                it.notes == requirement.key ||
+                    it.name.contains(requirement.title, ignoreCase = true)
+            }
             val isAdded = matching.isNotEmpty()
 
             Card(
@@ -1412,7 +1708,7 @@ private fun DocumentsScreen(
                 colors = CardDefaults.cardColors(
                     containerColor = if (isAdded) SoftMint else CardWhite
                 ),
-                border = androidx.compose.foundation.BorderStroke(
+                border = BorderStroke(
                     1.dp,
                     if (isAdded) Color(0xFFBEE6CF) else Color(0xFFE3E9F0)
                 ),
@@ -1426,14 +1722,22 @@ private fun DocumentsScreen(
                         Text(if (isAdded) "✅" else "📄")
                         Spacer(Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(title, fontWeight = FontWeight.Bold)
-                            Text(description, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                            Text(type, style = MaterialTheme.typography.labelSmall, color = Mint)
+                            Text(requirement.title, fontWeight = FontWeight.Bold)
+                            Text(
+                                requirement.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                            Text(
+                                requirement.type,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Mint
+                            )
                         }
 
                         FilledTonalButton(
                             onClick = {
-                                pendingType = type
+                                pendingRequirement = requirement
                                 launcher.launch(arrayOf("*/*"))
                             },
                             shape = RoundedCornerShape(12.dp),
@@ -1446,7 +1750,7 @@ private fun DocumentsScreen(
                         }
                     }
 
-                    matching.forEach { doc ->
+                    matching.forEach { document ->
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = CardWhite
@@ -1457,26 +1761,29 @@ private fun DocumentsScreen(
                                     .padding(9.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(doc.name, modifier = Modifier.weight(1f), maxLines = 1)
-
+                                Text(
+                                    document.name,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1
+                                )
                                 TextButton(
                                     onClick = {
                                         runCatching {
                                             context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, Uri.parse(doc.uri))
+                                                Intent(Intent.ACTION_VIEW, Uri.parse(document.uri))
                                                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                             )
                                         }
                                     }
-                                ) {
-                                    Text("פתיחה")
-                                }
+                                ) { Text("פתיחה") }
 
                                 IconButton(
                                     onClick = {
                                         onTripChange(
                                             trip.copy(
-                                                documents = trip.documents.filterNot { it.id == doc.id }
+                                                documents = trip.documents.filterNot {
+                                                    it.id == document.id
+                                                }
                                             )
                                         )
                                     }
@@ -1491,11 +1798,17 @@ private fun DocumentsScreen(
         }
 
         item {
+            val generalRequirement = DocumentRequirement(
+                key = "general-${UUID.randomUUID()}",
+                title = "מסמך כללי",
+                type = "כללי",
+                description = "קובץ נוסף שאינו משויך להזמנה"
+            )
             AccentButton(
                 text = "הוספת מסמך כללי",
                 emoji = "＋",
                 onClick = {
-                    pendingType = "כללי"
+                    pendingRequirement = generalRequirement
                     launcher.launch(arrayOf("*/*"))
                 },
                 color = Mint,

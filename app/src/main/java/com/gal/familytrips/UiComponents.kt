@@ -24,28 +24,28 @@ fun GradientHeader(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 14.dp),
-        shape = RoundedCornerShape(26.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            .padding(bottom = 8.dp),
+        shape = RoundedCornerShape(18.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 5.dp)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Brush.linearGradient(listOf(start, end)))
-                .padding(22.dp)
+                .padding(horizontal = 16.dp, vertical = 11.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(emoji, style = MaterialTheme.typography.displaySmall)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(emoji, style = MaterialTheme.typography.titleLarge)
                 Text(
                     title,
                     color = Color.White,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     subtitle,
                     color = Color.White.copy(alpha = .88f),
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
         }

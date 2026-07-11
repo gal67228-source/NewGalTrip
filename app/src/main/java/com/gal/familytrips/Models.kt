@@ -94,6 +94,7 @@ data class Trip(
     val expenses: List<Expense> = emptyList(),
     val documents: List<TripDocument> = emptyList(),
     val packingItems: List<PackingItem> = emptyList(),
+    val packingCategories: List<String> = emptyList(),
     val offlineMode: Boolean = false
 )
 

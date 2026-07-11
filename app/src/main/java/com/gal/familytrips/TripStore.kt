@@ -42,10 +42,14 @@ class TripStore(private val context: Context) {
                     documents = trip.documents,
                     restaurants = if (trip.restaurants.isEmpty()) full.restaurants else trip.restaurants,
                     packingItems = if (trip.packingItems.isEmpty()) defaultPackingItems() else trip.packingItems,
+                    packingCategories = if (trip.packingCategories.isEmpty()) defaultPackingCategories() else trip.packingCategories,
                     offlineMode = trip.offlineMode
                 )
-            } else if (trip.id == "budapest-2026" && trip.packingItems.isEmpty()) {
-                trip.copy(packingItems = defaultPackingItems())
+            } else if (trip.id == "budapest-2026" && (trip.packingItems.isEmpty() || trip.packingCategories.isEmpty())) {
+                trip.copy(
+                    packingItems = if (trip.packingItems.isEmpty()) defaultPackingItems() else trip.packingItems,
+                    packingCategories = if (trip.packingCategories.isEmpty()) defaultPackingCategories() else trip.packingCategories
+                )
             } else trip
         }
         return state.copy(trips = upgradedTrips)
@@ -73,6 +77,18 @@ class TripStore(private val context: Context) {
         notes = notes,
         mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
             android.net.Uri.encode(location.ifBlank { name })
+    )
+
+    private fun defaultPackingCategories(): List<String> = listOf(
+        "מסמכים",
+        "כסף",
+        "אלקטרוניקה",
+        "בגדים",
+        "רחצה",
+        "בריאות",
+        "ילדים",
+        "טיול יומי",
+        "כללי"
     )
 
     private fun defaultPackingItems(): List<PackingItem> = listOf(
@@ -276,7 +292,8 @@ class TripStore(private val context: Context) {
                 Hotel("h2","7Seasons Apartments","2026-08-08","2026-08-11","Király u. 8, Budapest","https://www.google.com/maps/search/?api=1&query=7Seasons+Apartments+Budapest")
             ),
             restaurants = restaurants,
-            packingItems = defaultPackingItems()
+            packingItems = defaultPackingItems(),
+            packingCategories = defaultPackingCategories()
         )
     }
 
