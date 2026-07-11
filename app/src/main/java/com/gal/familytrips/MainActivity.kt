@@ -16,6 +16,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.BorderStroke
@@ -1286,28 +1287,86 @@ private fun ExpensesScreen(
     onTripChange: (Trip) -> Unit,
     modifier: Modifier
 ) {
-    var addCustom by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf("הכול") }
     var editingTemplate by remember { mutableStateOf<BudgetTemplate?>(null) }
+    var editingCustomExpense by remember { mutableStateOf<Expense?>(null) }
+    var addCustomExpense by remember { mutableStateOf(false) }
+    var addCategory by remember { mutableStateOf(false) }
+    var pendingCategory by remember { mutableStateOf<String?>(null) }
 
     val templates = suggestedBudgetTemplates(trip)
     val templateIds = templates.map { it.id }.toSet()
     val customExpenses = trip.expenses.filterNot { it.id in templateIds }
-    val totals = trip.expenses
-        .filter { it.amount > 0 }
+
+    val defaultCategories = listOf(
+        "טיסות",
+        "מלונות",
+        "תחבורה",
+        "אטרקציות",
+        "אוכל",
+        "קניות",
+        "כללי"
+    )
+
+    val categories = (
+        defaultCategories +
+            templates.map { it.category } +
+            trip.expenses.map { it.category } +
+            listOfNotNull(pendingCategory)
+        )
+        .filter { it.isNotBlank() }
+        .distinct()
+
+    val categorySummaries = categories.map { category ->
+        val categoryTemplates = templates.filter { it.category == category }
+        val categoryExpenses = trip.expenses.filter { it.category == category }
+        val enteredCount = categoryTemplates.count { template ->
+            trip.expenses.any { it.id == template.id && it.amount > 0 }
+        }
+
+        BudgetCategorySummary(
+            category = category,
+            enteredCount = enteredCount,
+            totalCount = categoryTemplates.size,
+            totals = categoryExpenses
+                .filter { it.amount > 0 }
+                .groupBy { it.currency }
+                .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }
+        )
+    }
+
+    val visibleTemplates = if (selectedCategory == "הכול") {
+        templates
+    } else {
+        templates.filter { it.category == selectedCategory }
+    }
+
+    val visibleCustomExpenses = if (selectedCategory == "הכול") {
+        customExpenses
+    } else {
+        customExpenses.filter { it.category == selectedCategory }
+    }
+
+    val allEnteredExpenses = trip.expenses.filter { it.amount > 0 }
+    val globalTotals = allEnteredExpenses
         .groupBy { it.currency }
         .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }
+
+    val completedTemplates = templates.count { template ->
+        trip.expenses.any { it.id == template.id && it.amount > 0 }
+    }
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 28.dp)
     ) {
         item {
             GradientHeader(
                 title = "תקציב",
-                subtitle = "סעיפים נוצרים אוטומטית מהמסלול",
+                subtitle = "ניהול הוצאות לפי קטגוריות",
                 emoji = "💰",
                 start = Sun,
                 end = Color(0xFFE79A18)
@@ -1315,60 +1374,124 @@ private fun ExpensesScreen(
         }
 
         item {
-            SectionCard(containerColor = SoftSun) {
-                Text("סיכום הוצאות", fontWeight = FontWeight.Bold)
-                if (totals.isEmpty()) {
-                    Text("עדיין לא הוזנו סכומים", color = TextSecondary)
-                } else {
-                    totals.forEach { (currency, amount) ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(currency, color = TextSecondary)
-                            Text(
-                                String.format(java.util.Locale.US, "%.2f", amount),
-                                fontWeight = FontWeight.Bold,
-                                color = Navy
-                            )
-                        }
-                    }
-                }
+            BudgetOverviewCard(
+                completedTemplates = completedTemplates,
+                totalTemplates = templates.size,
+                totals = globalTotals
+            )
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 AccentButton(
-                    text = "הוצאה נוספת",
+                    text = "הוצאה",
                     emoji = "＋",
-                    onClick = { addCustom = true },
+                    onClick = { addCustomExpense = true },
                     color = Color(0xFFE7A62D),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.weight(1f)
+                )
+
+                SoftActionButton(
+                    text = "קטגוריה",
+                    emoji = "＋",
+                    onClick = { addCategory = true },
+                    container = SoftSun,
+                    contentColor = Color(0xFF8F6500),
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
 
         item {
             Text(
-                "הוצאות מוכנות להזנה",
+                "קטגוריות",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
         }
 
-        items(templates, key = { it.id }) { template ->
-            val saved = trip.expenses.firstOrNull { it.id == template.id }
-            BudgetTemplateCard(
+        item {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(end = 4.dp)
+            ) {
+                item {
+                    BudgetCategoryCard(
+                        summary = BudgetCategorySummary(
+                            category = "הכול",
+                            enteredCount = completedTemplates,
+                            totalCount = templates.size,
+                            totals = globalTotals
+                        ),
+                        selected = selectedCategory == "הכול",
+                        onClick = { selectedCategory = "הכול" }
+                    )
+                }
+
+                items(categorySummaries, key = { it.category }) { summary ->
+                    BudgetCategoryCard(
+                        summary = summary,
+                        selected = selectedCategory == summary.category,
+                        onClick = { selectedCategory = summary.category }
+                    )
+                }
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        if (selectedCategory == "הכול") {
+                            "כל סעיפי התקציב"
+                        } else {
+                            selectedCategory
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "${visibleTemplates.size} סעיפים אוטומטיים",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+
+                if (selectedCategory != "הכול") {
+                    TextButton(onClick = { selectedCategory = "הכול" }) {
+                        Text("הצג הכול")
+                    }
+                }
+            }
+        }
+
+        items(visibleTemplates, key = { it.id }) { template ->
+            val savedExpense = trip.expenses.firstOrNull { it.id == template.id }
+
+            ProfessionalBudgetItemCard(
                 template = template,
-                expense = saved,
+                expense = savedExpense,
                 onEnterAmount = { editingTemplate = template },
                 onClear = {
                     onTripChange(
                         trip.copy(
-                            expenses = trip.expenses.filterNot { it.id == template.id }
+                            expenses = trip.expenses.filterNot {
+                                it.id == template.id
+                            }
                         )
                     )
                 }
             )
         }
 
-        if (customExpenses.isNotEmpty()) {
+        if (visibleCustomExpenses.isNotEmpty()) {
             item {
                 Text(
                     "הוצאות נוספות",
@@ -1376,43 +1499,31 @@ private fun ExpensesScreen(
                     fontWeight = FontWeight.Bold
                 )
             }
-        }
 
-        items(customExpenses, key = { it.id }) { expense ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                border = BorderStroke(1.dp, Color(0xFFE3E9F0))
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(expense.title, fontWeight = FontWeight.Bold)
-                        Text(
-                            "${expense.category} · ${expense.date}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary
+            items(visibleCustomExpenses, key = { it.id }) { expense ->
+                CustomExpenseCard(
+                    expense = expense,
+                    onEdit = { editingCustomExpense = expense },
+                    onDelete = {
+                        onTripChange(
+                            trip.copy(
+                                expenses = trip.expenses.filterNot {
+                                    it.id == expense.id
+                                }
+                            )
                         )
                     }
+                )
+            }
+        }
+
+        if (visibleTemplates.isEmpty() && visibleCustomExpenses.isEmpty()) {
+            item {
+                SectionCard(containerColor = CardWhite) {
                     Text(
-                        "${expense.amount} ${expense.currency}",
-                        fontWeight = FontWeight.Bold,
-                        color = Navy
+                        "אין עדיין סעיפים בקטגוריה הזו",
+                        color = TextSecondary
                     )
-                    IconButton(
-                        onClick = {
-                            onTripChange(
-                                trip.copy(
-                                    expenses = trip.expenses.filterNot { it.id == expense.id }
-                                )
-                            )
-                        }
-                    ) {
-                        SmallDeleteIcon(Modifier.size(28.dp))
-                    }
                 }
             }
         }
@@ -1420,6 +1531,7 @@ private fun ExpensesScreen(
 
     editingTemplate?.let { template ->
         val existing = trip.expenses.firstOrNull { it.id == template.id }
+
         BudgetAmountDialog(
             template = template,
             existing = existing,
@@ -1433,9 +1545,12 @@ private fun ExpensesScreen(
                     category = template.category,
                     date = template.date
                 )
+
                 onTripChange(
                     trip.copy(
-                        expenses = trip.expenses.filterNot { it.id == template.id } + updated
+                        expenses = trip.expenses.filterNot {
+                            it.id == template.id
+                        } + updated
                     )
                 )
                 editingTemplate = null
@@ -1443,38 +1558,252 @@ private fun ExpensesScreen(
         )
     }
 
-    if (addCustom) {
-        SimpleTextDialog(
-            title = "הוצאה נוספת",
-            fields = listOf("תיאור", "סכום", "מטבע", "קטגוריה", "תאריך"),
-            onDismiss = { addCustom = false },
-            onConfirm = { values ->
+    if (addCustomExpense) {
+        CustomExpenseDialog(
+            categories = categories,
+            defaultCategory = pendingCategory,
+            defaultCurrency = destinationCurrency(trip.destination),
+            defaultDate = trip.startDate,
+            existing = null,
+            onDismiss = {
+                addCustomExpense = false
+                pendingCategory = null
+            },
+            onConfirm = { expense ->
+                onTripChange(
+                    trip.copy(expenses = trip.expenses + expense)
+                )
+                addCustomExpense = false
+                pendingCategory = null
+                selectedCategory = expense.category
+            }
+        )
+    }
+
+    editingCustomExpense?.let { expense ->
+        CustomExpenseDialog(
+            categories = categories,
+            defaultCategory = expense.category,
+            defaultCurrency = expense.currency,
+            defaultDate = expense.date,
+            existing = expense,
+            onDismiss = { editingCustomExpense = null },
+            onConfirm = { updated ->
                 onTripChange(
                     trip.copy(
-                        expenses = trip.expenses + Expense(
-                            id = UUID.randomUUID().toString(),
-                            title = values[0],
-                            amount = values[1].toDoubleOrNull() ?: 0.0,
-                            currency = values[2].ifBlank { destinationCurrency(trip.destination) },
-                            category = values[3].ifBlank { "כללי" },
-                            date = values[4].ifBlank { trip.startDate }
-                        )
+                        expenses = trip.expenses.map {
+                            if (it.id == updated.id) updated else it
+                        }
                     )
                 )
-                addCustom = false
+                editingCustomExpense = null
+            }
+        )
+    }
+
+    if (addCategory) {
+        AddBudgetCategoryDialog(
+            existing = categories,
+            onDismiss = { addCategory = false },
+            onConfirm = { category ->
+                pendingCategory = category
+                selectedCategory = category
+                addCategory = false
+                addCustomExpense = true
             }
         )
     }
 }
 
+data class BudgetCategorySummary(
+    val category: String,
+    val enteredCount: Int,
+    val totalCount: Int,
+    val totals: Map<String, Double>
+)
+
 @Composable
-private fun BudgetTemplateCard(
+private fun BudgetOverviewCard(
+    completedTemplates: Int,
+    totalTemplates: Int,
+    totals: Map<String, Double>
+) {
+    val progress = if (totalTemplates == 0) {
+        0f
+    } else {
+        completedTemplates.toFloat() / totalTemplates.toFloat()
+    }
+
+    SectionCard(containerColor = SoftSun) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "תמונת מצב",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+                Text(
+                    "$completedTemplates מתוך $totalTemplates סעיפים הוזנו",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(CardWhite),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "${(progress * 100).toInt()}%",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF9A6600)
+                )
+            }
+        }
+
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFFE7A62D),
+            trackColor = CardWhite
+        )
+
+        if (totals.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = CardWhite
+            ) {
+                Text(
+                    "עדיין לא הוזנו סכומים",
+                    modifier = Modifier.padding(12.dp),
+                    color = TextSecondary
+                )
+            }
+        } else {
+            totals.forEach { (currency, amount) ->
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = CardWhite
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(currency, color = TextSecondary)
+                        Text(
+                            formatBudgetAmount(amount),
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BudgetCategoryCard(
+    summary: BudgetCategorySummary,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val categoryColor = budgetCategoryColor(summary.category)
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .width(156.dp)
+            .height(132.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                categoryColor.copy(alpha = .16f)
+            } else {
+                CardWhite
+            }
+        ),
+        border = BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) categoryColor else Color(0xFFE3E9F0)
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (selected) 5.dp else 2.dp
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(13.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(categoryColor.copy(alpha = .15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(budgetCategoryEmoji(summary.category))
+                }
+
+                if (selected) {
+                    Text(
+                        "✓",
+                        color = categoryColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Column {
+                Text(
+                    summary.category,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+
+                Text(
+                    budgetTotalsText(summary.totals),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                    maxLines = 2
+                )
+
+                if (summary.totalCount > 0) {
+                    Text(
+                        "${summary.enteredCount}/${summary.totalCount} סעיפים",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = categoryColor
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfessionalBudgetItemCard(
     template: BudgetTemplate,
     expense: Expense?,
     onEnterAmount: () -> Unit,
     onClear: () -> Unit
 ) {
     val hasAmount = expense != null && expense.amount > 0
+    val categoryColor = budgetCategoryColor(template.category)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1488,65 +1817,96 @@ private fun BudgetTemplateCard(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(13.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(if (hasAmount) CardWhite else SoftSun),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    when (template.category) {
-                        "מלונות" -> "🏨"
-                        "טיסות" -> "✈️"
-                        "תחבורה" -> "🚌"
-                        "אוכל" -> "🍽️"
-                        "אטרקציות" -> "🎫"
-                        "קניות" -> "🛍️"
-                        else -> "💳"
-                    }
-                )
-            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(categoryColor.copy(alpha = .14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(budgetCategoryEmoji(template.category))
+                }
 
-            Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(10.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(template.title, fontWeight = FontWeight.Bold)
-                Text(
-                    "${template.category} · ${template.date}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary
-                )
-            }
-
-            if (hasAmount) {
-                Column(horizontalAlignment = Alignment.End) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "${expense!!.amount} ${expense.currency}",
+                        template.title,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2E7D56)
+                        color = Navy
                     )
-                    Row {
-                        TextButton(onClick = onEnterAmount) { Text("עריכה") }
-                        IconButton(onClick = onClear, modifier = Modifier.size(32.dp)) {
-                            SmallDeleteIcon(Modifier.size(25.dp))
-                        }
+                    Text(
+                        "${template.category} · ${template.date}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary
+                    )
+                }
+
+                if (hasAmount) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            "${formatBudgetAmount(expense!!.amount)} ${expense.currency}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2E7D56)
+                        )
+                        Text(
+                            "הוזן",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF2E7D56)
+                        )
+                    }
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = SoftSun
+                    ) {
+                        Text(
+                            "טרם הוזן",
+                            modifier = Modifier.padding(
+                                horizontal = 10.dp,
+                                vertical = 5.dp
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF8F6500)
+                        )
                     }
                 }
-            } else {
-                FilledTonalButton(
-                    onClick = onEnterAmount,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = SoftSun,
-                        contentColor = Color(0xFF8F6500)
-                    )
-                ) {
-                    Text("הזן סכום")
+            }
+
+            HorizontalDivider(color = Color(0xFFE8EDF3))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                if (hasAmount) {
+                    TextButton(onClick = onEnterAmount) {
+                        Text("עריכת סכום")
+                    }
+
+                    IconButton(
+                        onClick = onClear,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        SmallDeleteIcon(Modifier.size(28.dp))
+                    }
+                } else {
+                    FilledTonalButton(
+                        onClick = onEnterAmount,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = categoryColor.copy(alpha = .14f),
+                            contentColor = categoryColor
+                        )
+                    ) {
+                        Text("הזן סכום")
+                    }
                 }
             }
         }
@@ -1554,74 +1914,349 @@ private fun BudgetTemplateCard(
 }
 
 @Composable
-private fun BudgetAmountDialog(
-    template: BudgetTemplate,
+private fun CustomExpenseCard(
+    expense: Expense,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val categoryColor = budgetCategoryColor(expense.category)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        border = BorderStroke(1.dp, Color(0xFFE3E9F0)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(categoryColor.copy(alpha = .14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(budgetCategoryEmoji(expense.category))
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(expense.title, fontWeight = FontWeight.Bold)
+                Text(
+                    "${expense.category} · ${expense.date}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    "${formatBudgetAmount(expense.amount)} ${expense.currency}",
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+
+                Row {
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        SmallEditIcon(Modifier.size(27.dp))
+                    }
+
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        SmallDeleteIcon(Modifier.size(27.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomExpenseDialog(
+    categories: List<String>,
+    defaultCategory: String?,
+    defaultCurrency: String,
+    defaultDate: String,
     existing: Expense?,
     onDismiss: () -> Unit,
-    onConfirm: (Double, String) -> Unit
+    onConfirm: (Expense) -> Unit
 ) {
-    var amountText by remember(template.id) {
-        mutableStateOf(existing?.amount?.takeIf { it > 0 }?.toString().orEmpty())
+    val cleanCategories = categories
+        .filter { it.isNotBlank() }
+        .distinct()
+
+    var title by remember(existing?.id) {
+        mutableStateOf(existing?.title.orEmpty())
     }
-    var currency by remember(template.id) {
-        mutableStateOf(existing?.currency ?: template.currency)
+    var amountText by remember(existing?.id) {
+        mutableStateOf(
+            existing?.amount
+                ?.takeIf { it > 0 }
+                ?.toString()
+                .orEmpty()
+        )
     }
-    var menuOpen by remember { mutableStateOf(false) }
-    val currencies = listOf(template.currency, "EUR", "USD", "ILS").distinct()
+    var category by remember(existing?.id, defaultCategory) {
+        mutableStateOf(
+            existing?.category
+                ?: defaultCategory
+                ?: cleanCategories.firstOrNull()
+                ?: "כללי"
+        )
+    }
+    var categoryMenuOpen by remember { mutableStateOf(false) }
+    var currency by remember(existing?.id) {
+        mutableStateOf(existing?.currency ?: defaultCurrency)
+    }
+    var currencyMenuOpen by remember { mutableStateOf(false) }
+    var date by remember(existing?.id) {
+        mutableStateOf(existing?.date ?: defaultDate)
+    }
+
+    val currencies = listOf(
+        defaultCurrency,
+        existing?.currency.orEmpty(),
+        "EUR",
+        "USD",
+        "ILS",
+        "HUF",
+        "GBP"
+    )
+        .filter { it.isNotBlank() }
+        .distinct()
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(template.title) },
+        title = {
+            Text(
+                if (existing == null) {
+                    "הוצאה חדשה"
+                } else {
+                    "עריכת הוצאה"
+                }
+            )
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = {
-                        amountText = it.filter { char -> char.isDigit() || char == '.' }
-                    },
-                    label = { Text("סכום") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { menuOpen = true },
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                item {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("תיאור ההוצאה") },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("מטבע: $currency", modifier = Modifier.weight(1f))
-                        Text("⌄")
-                    }
-                    DropdownMenu(
-                        expanded = menuOpen,
-                        onDismissRequest = { menuOpen = false }
-                    ) {
-                        currencies.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option) },
-                                onClick = {
-                                    currency = option
-                                    menuOpen = false
-                                }
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = {
+                            amountText = it.filter { char ->
+                                char.isDigit() || char == '.'
+                            }
+                        },
+                        label = { Text("סכום") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { categoryMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "קטגוריה: $category",
+                                modifier = Modifier.weight(1f)
                             )
+                            Text("⌄")
+                        }
+
+                        DropdownMenu(
+                            expanded = categoryMenuOpen,
+                            onDismissRequest = {
+                                categoryMenuOpen = false
+                            }
+                        ) {
+                            cleanCategories.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option) },
+                                    onClick = {
+                                        category = option
+                                        categoryMenuOpen = false
+                                    }
+                                )
+                            }
                         }
                     }
+                }
+
+                item {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { currencyMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "מטבע: $currency",
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("⌄")
+                        }
+
+                        DropdownMenu(
+                            expanded = currencyMenuOpen,
+                            onDismissRequest = {
+                                currencyMenuOpen = false
+                            }
+                        ) {
+                            currencies.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option) },
+                                    onClick = {
+                                        currency = option
+                                        currencyMenuOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = date,
+                        onValueChange = { date = it },
+                        label = { Text("תאריך") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = (amountText.toDoubleOrNull() ?: 0.0) >= 0,
+                enabled = title.isNotBlank() &&
+                    (amountText.toDoubleOrNull() ?: 0.0) > 0,
                 onClick = {
-                    onConfirm(amountText.toDoubleOrNull() ?: 0.0, currency)
+                    onConfirm(
+                        Expense(
+                            id = existing?.id
+                                ?: UUID.randomUUID().toString(),
+                            title = title.trim(),
+                            amount = amountText.toDoubleOrNull() ?: 0.0,
+                            currency = currency,
+                            category = category,
+                            date = date.ifBlank { defaultDate }
+                        )
+                    )
                 }
-            ) { Text("שמירה") }
+            ) {
+                Text("שמירה")
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("ביטול") }
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
         }
     )
 }
+
+@Composable
+private fun AddBudgetCategoryDialog(
+    existing: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    val duplicate = existing.any {
+        it.equals(name.trim(), ignoreCase = true)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("קטגוריית תקציב חדשה") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("שם הקטגוריה") },
+                isError = duplicate,
+                supportingText = {
+                    if (duplicate) {
+                        Text("הקטגוריה כבר קיימת")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank() && !duplicate,
+                onClick = { onConfirm(name.trim()) }
+            ) {
+                Text("הוספה")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
+}
+
+private fun budgetCategoryEmoji(category: String): String = when (category) {
+    "טיסות" -> "✈️"
+    "מלונות" -> "🏨"
+    "תחבורה" -> "🚌"
+    "אטרקציות" -> "🎫"
+    "אוכל" -> "🍽️"
+    "קניות" -> "🛍️"
+    "כללי" -> "💳"
+    "הכול" -> "📊"
+    else -> "💰"
+}
+
+private fun budgetCategoryColor(category: String): Color = when (category) {
+    "טיסות" -> Color(0xFF4F8FD8)
+    "מלונות" -> Color(0xFF20AFC4)
+    "תחבורה" -> Color(0xFF7C69D9)
+    "אטרקציות" -> Color(0xFFFF7A66)
+    "אוכל" -> Color(0xFFE7A62D)
+    "קניות" -> Color(0xFFE46B9A)
+    "כללי" -> Color(0xFF64748B)
+    "הכול" -> Navy
+    else -> Color(0xFF5C7AEA)
+}
+
+private fun budgetTotalsText(totals: Map<String, Double>): String =
+    if (totals.isEmpty()) {
+        "טרם הוזן"
+    } else {
+        totals.entries.joinToString(" · ") { entry ->
+            "${formatBudgetAmount(entry.value)} ${entry.key}"
+        }
+    }
+
+private fun formatBudgetAmount(amount: Double): String =
+    if (amount % 1.0 == 0.0) {
+        amount.toInt().toString()
+    } else {
+        String.format(java.util.Locale.US, "%.2f", amount)
+    }
 
 @Composable
 private fun DocumentsScreen(
