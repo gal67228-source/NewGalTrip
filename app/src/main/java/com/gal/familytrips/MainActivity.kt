@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
@@ -1006,7 +1008,9 @@ private fun DayDetailScreen(
 ) {
     val day = trip.days.first { it.id == dayId }
     var addActivity by remember { mutableStateOf(false) }
+    var quickAddActivity by remember { mutableStateOf(false) }
     var editingActivity by remember { mutableStateOf<ActivityItem?>(null) }
+    var movingActivity by remember { mutableStateOf<ActivityItem?>(null) }
 
     Column(
         modifier = modifier
@@ -1026,8 +1030,8 @@ private fun DayDetailScreen(
                 Text(day.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(day.date, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = { addActivity = true }) {
-                Icon(Icons.Default.AddCircle, "הוספת פעילות", tint = Sky)
+            IconButton(onClick = { quickAddActivity = true }) {
+                Icon(Icons.Default.AddCircle, "הוספת פעילות מהירה", tint = Sky)
             }
         }
 
@@ -1218,6 +1222,57 @@ private fun DayDetailScreen(
                             Spacer(Modifier.weight(1f))
 
                             IconButton(
+                                onClick = {
+                                    val duplicated = activity.copy(
+                                        id = UUID.randomUUID().toString(),
+                                        name = "${activity.name} – עותק",
+                                        completed = false
+                                    )
+                                    val activityIndex = day.activities.indexOfFirst {
+                                        it.id == activity.id
+                                    }
+                                    val updatedActivities = day.activities.toMutableList()
+                                    val insertIndex = if (activityIndex >= 0) {
+                                        activityIndex + 1
+                                    } else {
+                                        updatedActivities.size
+                                    }
+                                    updatedActivities.add(insertIndex, duplicated)
+
+                                    val updatedDay = day.copy(
+                                        activities = updatedActivities
+                                    )
+                                    onTripChange(
+                                        trip.copy(
+                                            days = trip.days.map {
+                                                if (it.id == day.id) updatedDay else it
+                                            }
+                                        )
+                                    )
+                                },
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                CompactActionCircle(
+                                    symbol = "⧉",
+                                    description = "שכפול פעילות",
+                                    background = SoftLavender,
+                                    content = Lavender
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { movingActivity = activity },
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                CompactActionCircle(
+                                    symbol = "↪",
+                                    description = "העברה ליום אחר",
+                                    background = SoftAqua,
+                                    content = Aqua
+                                )
+                            }
+
+                            IconButton(
                                 onClick = { editingActivity = activity },
                                 modifier = Modifier.size(38.dp)
                             ) {
@@ -1257,6 +1312,58 @@ private fun DayDetailScreen(
         }
     }
 
+    if (quickAddActivity) {
+        QuickActivityDialog(
+            day = day,
+            onDismiss = { quickAddActivity = false },
+            onOpenFullEditor = {
+                quickAddActivity = false
+                addActivity = true
+            },
+            onConfirm = { activity ->
+                val updatedDay = day.copy(
+                    activities = day.activities + activity
+                )
+                onTripChange(
+                    trip.copy(
+                        days = trip.days.map {
+                            if (it.id == day.id) updatedDay else it
+                        }
+                    )
+                )
+                quickAddActivity = false
+            }
+        )
+    }
+
+    movingActivity?.let { activity ->
+        MoveActivityDialog(
+            activity = activity,
+            currentDayId = day.id,
+            days = trip.days.sortedBy { it.date },
+            onDismiss = { movingActivity = null },
+            onConfirm = { targetDayId ->
+                val updatedDays = trip.days.map { tripDay ->
+                    when (tripDay.id) {
+                        day.id -> tripDay.copy(
+                            activities = tripDay.activities.filterNot {
+                                it.id == activity.id
+                            }
+                        )
+                        targetDayId -> tripDay.copy(
+                            activities = tripDay.activities + activity.copy(
+                                completed = false
+                            )
+                        )
+                        else -> tripDay
+                    }
+                }
+                onTripChange(trip.copy(days = updatedDays))
+                movingActivity = null
+            }
+        )
+    }
+
     if (addActivity) {
         ActivityEditorDialog(
             title = "פעילות חדשה",
@@ -1294,6 +1401,432 @@ private fun DayDetailScreen(
             }
         )
     }
+}
+
+private data class ActivityPreset(
+    val key: String,
+    val title: String,
+    val emoji: String,
+    val defaultName: String,
+    val duration: String,
+    val transport: String = "",
+    val notes: String = ""
+)
+
+private val activityPresets = listOf(
+    ActivityPreset(
+        key = "attraction",
+        title = "אטרקציה",
+        emoji = "🎫",
+        defaultName = "אטרקציה",
+        duration = "כשעתיים",
+        notes = "מומלץ לבדוק שעות פתיחה וכרטיסים"
+    ),
+    ActivityPreset(
+        key = "meal",
+        title = "ארוחה",
+        emoji = "🍽️",
+        defaultName = "ארוחה",
+        duration = "שעה"
+    ),
+    ActivityPreset(
+        key = "hotel",
+        title = "מלון",
+        emoji = "🏨",
+        defaultName = "הגעה / התארגנות במלון",
+        duration = "45 דקות"
+    ),
+    ActivityPreset(
+        key = "flight",
+        title = "טיסה",
+        emoji = "✈️",
+        defaultName = "טיסה",
+        duration = "לפי הכרטיס",
+        transport = "טיסה",
+        notes = "להוסיף מסמכי טיסה לכל נוסע"
+    ),
+    ActivityPreset(
+        key = "transfer",
+        title = "הסעה",
+        emoji = "🚕",
+        defaultName = "הסעה",
+        duration = "לפי המסלול",
+        transport = "הסעה / מונית"
+    ),
+    ActivityPreset(
+        key = "train",
+        title = "רכבת",
+        emoji = "🚆",
+        defaultName = "נסיעה ברכבת",
+        duration = "לפי הכרטיס",
+        transport = "רכבת"
+    ),
+    ActivityPreset(
+        key = "shopping",
+        title = "קניות",
+        emoji = "🛍️",
+        defaultName = "קניות",
+        duration = "שעתיים"
+    ),
+    ActivityPreset(
+        key = "rest",
+        title = "מנוחה",
+        emoji = "😴",
+        defaultName = "מנוחה",
+        duration = "שעה וחצי"
+    ),
+    ActivityPreset(
+        key = "pool",
+        title = "בריכה",
+        emoji = "🏊",
+        defaultName = "בריכה / פארק מים",
+        duration = "שעתיים"
+    ),
+    ActivityPreset(
+        key = "walk",
+        title = "טיול רגלי",
+        emoji = "🚶",
+        defaultName = "טיול רגלי",
+        duration = "שעה",
+        transport = "הליכה"
+    )
+)
+
+@Composable
+private fun CompactActionCircle(
+    symbol: String,
+    description: String,
+    background: Color,
+    content: Color
+) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(background),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = symbol,
+            color = content,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.semantics {
+                contentDescription = description
+            }
+        )
+    }
+}
+
+@Composable
+private fun QuickActivityDialog(
+    day: TripDay,
+    onDismiss: () -> Unit,
+    onOpenFullEditor: () -> Unit,
+    onConfirm: (ActivityItem) -> Unit
+) {
+    var selectedPreset by remember {
+        mutableStateOf(activityPresets.first())
+    }
+    var time by remember { mutableStateOf(nextSuggestedTime(day)) }
+    var name by remember { mutableStateOf(selectedPreset.defaultName) }
+    var location by remember { mutableStateOf("") }
+    var duration by remember { mutableStateOf(selectedPreset.duration) }
+
+    fun selectPreset(preset: ActivityPreset) {
+        selectedPreset = preset
+        name = preset.defaultName
+        duration = preset.duration
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("הוספת פעילות מהירה")
+                Text(
+                    "בחר סוג והזן רק את הפרטים החשובים",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Text(
+                        "סוג פעילות",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                item {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(
+                            activityPresets,
+                            key = { it.key }
+                        ) { preset ->
+                            FilterChip(
+                                selected = selectedPreset.key == preset.key,
+                                onClick = { selectPreset(preset) },
+                                label = {
+                                    Text("${preset.emoji} ${preset.title}")
+                                }
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = time,
+                        onValueChange = { time = it },
+                        label = { Text("שעה") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("שם הפעילות") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = location,
+                        onValueChange = { location = it },
+                        label = { Text("מיקום – אפשר להשאיר ריק") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = duration,
+                        onValueChange = { duration = it },
+                        label = { Text("משך") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = SoftBlue
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(11.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                "ימולא אוטומטית",
+                                fontWeight = FontWeight.Bold,
+                                color = Sky
+                            )
+                            if (selectedPreset.transport.isNotBlank()) {
+                                Text(
+                                    "אמצעי הגעה: ${selectedPreset.transport}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            if (selectedPreset.notes.isNotBlank()) {
+                                Text(
+                                    selectedPreset.notes,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                            }
+                            Text(
+                                "קישורי Maps ו-Waze ייווצרו מהמיקום",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    TextButton(
+                        onClick = onOpenFullEditor,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("פתיחת טופס מלא")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = {
+                    val query = location.ifBlank { name }
+                    onConfirm(
+                        ActivityItem(
+                            id = UUID.randomUUID().toString(),
+                            time = time.trim(),
+                            name = name.trim(),
+                            location = location.trim(),
+                            transport = selectedPreset.transport,
+                            directions = "",
+                            duration = duration.trim(),
+                            cost = "",
+                            notes = selectedPreset.notes,
+                            mapsUrl =
+                                "https://www.google.com/maps/search/?api=1&query=" +
+                                    Uri.encode(query),
+                            completed = false
+                        )
+                    )
+                }
+            ) {
+                Text("הוספה")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
+}
+
+private fun nextSuggestedTime(day: TripDay): String {
+    val lastTime = day.activities
+        .mapNotNull { activity ->
+            Regex("""(\d{1,2}):(\d{2})""")
+                .find(activity.time)
+                ?.let { match ->
+                    val hour = match.groupValues[1].toIntOrNull()
+                    val minute = match.groupValues[2].toIntOrNull()
+                    if (hour != null && minute != null) {
+                        hour * 60 + minute
+                    } else {
+                        null
+                    }
+                }
+        }
+        .maxOrNull()
+        ?: return "09:00"
+
+    val suggested = (lastTime + 60).coerceAtMost(23 * 60 + 59)
+    return "%02d:%02d".format(
+        suggested / 60,
+        suggested % 60
+    )
+}
+
+@Composable
+private fun MoveActivityDialog(
+    activity: ActivityItem,
+    currentDayId: String,
+    days: List<TripDay>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var selectedDayId by remember {
+        mutableStateOf(
+            days.firstOrNull { it.id != currentDayId }?.id.orEmpty()
+        )
+    }
+
+    val targetDays = days.filter { it.id != currentDayId }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("העברת פעילות")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Text(
+                    activity.name,
+                    fontWeight = FontWeight.Bold
+                )
+
+                if (targetDays.isEmpty()) {
+                    Text(
+                        "אין יום נוסף בטיול. יש להוסיף יום לפני העברת הפעילות.",
+                        color = TextSecondary
+                    )
+                } else {
+                    targetDays.forEach { targetDay ->
+                        Surface(
+                            onClick = {
+                                selectedDayId = targetDay.id
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (selectedDayId == targetDay.id) {
+                                SoftBlue
+                            } else {
+                                CardWhite
+                            },
+                            border = BorderStroke(
+                                if (selectedDayId == targetDay.id) 2.dp else 1.dp,
+                                if (selectedDayId == targetDay.id) {
+                                    Sky
+                                } else {
+                                    Color(0xFFE3E9F0)
+                                }
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(11.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedDayId == targetDay.id,
+                                    onClick = {
+                                        selectedDayId = targetDay.id
+                                    }
+                                )
+                                Column {
+                                    Text(
+                                        targetDay.title,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        targetDay.date,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selectedDayId.isNotBlank(),
+                onClick = {
+                    onConfirm(selectedDayId)
+                }
+            ) {
+                Text("העברה")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
 }
 
 @Composable
