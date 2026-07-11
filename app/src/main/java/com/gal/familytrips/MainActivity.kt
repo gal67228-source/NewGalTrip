@@ -1981,6 +1981,129 @@ private fun CustomExpenseCard(
 }
 
 @Composable
+private fun BudgetAmountDialog(
+    template: BudgetTemplate,
+    existing: Expense?,
+    onDismiss: () -> Unit,
+    onConfirm: (Double, String) -> Unit
+) {
+    var amountText by remember(template.id) {
+        mutableStateOf(
+            existing?.amount
+                ?.takeIf { it > 0 }
+                ?.toString()
+                .orEmpty()
+        )
+    }
+
+    var currency by remember(template.id) {
+        mutableStateOf(existing?.currency ?: template.currency)
+    }
+
+    var currencyMenuOpen by remember { mutableStateOf(false) }
+
+    val currencies = listOf(
+        template.currency,
+        existing?.currency.orEmpty(),
+        "EUR",
+        "USD",
+        "ILS",
+        "HUF",
+        "GBP"
+    )
+        .filter { it.isNotBlank() }
+        .distinct()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    text = template.title,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = template.category,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { value ->
+                        amountText = value.filter { char ->
+                            char.isDigit() || char == '.'
+                        }
+                    },
+                    label = { Text("סכום") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Box(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedButton(
+                        onClick = { currencyMenuOpen = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "מטבע: $currency",
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text("⌄")
+                    }
+
+                    DropdownMenu(
+                        expanded = currencyMenuOpen,
+                        onDismissRequest = {
+                            currencyMenuOpen = false
+                        }
+                    ) {
+                        currencies.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    currency = option
+                                    currencyMenuOpen = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "תאריך: ${template.date}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = (amountText.toDoubleOrNull() ?: 0.0) > 0,
+                onClick = {
+                    val amount = amountText.toDoubleOrNull() ?: 0.0
+                    onConfirm(amount, currency)
+                }
+            ) {
+                Text("שמירה")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
+}
+
+@Composable
 private fun CustomExpenseDialog(
     categories: List<String>,
     defaultCategory: String?,
