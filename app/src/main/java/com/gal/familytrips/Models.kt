@@ -72,6 +72,16 @@ data class TripDocument(
 )
 
 @Serializable
+data class PackingItem(
+    val id: String,
+    val name: String,
+    val category: String = "כללי",
+    val packed: Boolean = false,
+    val quantity: Int = 1,
+    val notes: String = ""
+)
+
+@Serializable
 data class Trip(
     val id: String,
     val name: String,
@@ -82,7 +92,9 @@ data class Trip(
     val hotels: List<Hotel> = emptyList(),
     val restaurants: List<Restaurant> = emptyList(),
     val expenses: List<Expense> = emptyList(),
-    val documents: List<TripDocument> = emptyList()
+    val documents: List<TripDocument> = emptyList(),
+    val packingItems: List<PackingItem> = emptyList(),
+    val offlineMode: Boolean = false
 )
 
 @Serializable

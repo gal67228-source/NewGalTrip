@@ -372,6 +372,7 @@ object ExchangeRateService {
 @Composable
 fun GeneralInfoScreen(
     trip: Trip,
+    onTripChange: (Trip) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val info by produceState<DestinationInfo?>(initialValue = null, trip.destination) {
@@ -395,6 +396,13 @@ fun GeneralInfoScreen(
             )
         }
 
+        item {
+            OfflineModeCard(
+                trip = trip,
+                onTripChange = onTripChange
+            )
+        }
+
         if (info == null) {
             item {
                 SectionCard(containerColor = SoftLavender) {
@@ -414,7 +422,7 @@ fun GeneralInfoScreen(
             }
 
             item {
-                CurrencyConverterCard(destination)
+                CurrencyConverterCard(destination, offlineMode = trip.offlineMode)
             }
 
             item {
@@ -483,7 +491,7 @@ private fun DestinationSummaryCard(info: DestinationInfo) {
 }
 
 @Composable
-private fun CurrencyConverterCard(info: DestinationInfo) {
+private fun CurrencyConverterCard(info: DestinationInfo, offlineMode: Boolean) {
     var amountText by remember { mutableStateOf("100") }
     var directionToLocal by remember { mutableStateOf(true) }
     var rate by remember { mutableStateOf<Double?>(null) }
@@ -491,8 +499,8 @@ private fun CurrencyConverterCard(info: DestinationInfo) {
     val from = if (directionToLocal) "ILS" else info.currencyCode
     val to = if (directionToLocal) info.currencyCode else "ILS"
 
-    LaunchedEffect(from, to) {
-        rate = ExchangeRateService.rate(from, to)
+    LaunchedEffect(from, to, offlineMode) {
+        rate = if (offlineMode) null else ExchangeRateService.rate(from, to)
     }
 
     val amount = amountText.toDoubleOrNull() ?: 0.0
@@ -529,7 +537,7 @@ private fun CurrencyConverterCard(info: DestinationInfo) {
                 text = if (converted != null) {
                     String.format(Locale.US, "%.2f %s", converted, to)
                 } else {
-                    "טוען שער המרה…"
+                    if (offlineMode) "לא זמין במצב אופליין" else "טוען שער המרה…"
                 },
                 modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.titleLarge,

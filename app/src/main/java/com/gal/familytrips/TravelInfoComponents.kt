@@ -183,8 +183,12 @@ private fun ClockCard(flag: String, city: String, time: String, modifier: Modifi
 
 @Composable
 fun WeatherCard(trip: Trip, day: TripDay, modifier: Modifier = Modifier) {
-    val weather by produceState<DayWeather?>(initialValue = null, day.date) {
-        value = runCatching { WeatherService.load(trip, day) }.getOrNull()
+    val weather by produceState<DayWeather?>(initialValue = null, day.date, trip.offlineMode) {
+        value = if (trip.offlineMode) {
+            null
+        } else {
+            runCatching { WeatherService.load(trip, day) }.getOrNull()
+        }
     }
 
     val tripDate = remember(day.date) { runCatching { LocalDate.parse(day.date) }.getOrNull() }
@@ -217,6 +221,7 @@ fun WeatherCard(trip: Trip, day: TripDay, modifier: Modifier = Modifier) {
                 Text("🌦️")
                 Text(
                     when {
+                        trip.offlineMode -> "תחזית לא מתעדכנת במצב אופליין"
                         daysAway == null -> "תחזית לא זמינה"
                         daysAway < 0 -> "היום כבר עבר"
                         daysAway > 16 -> "התחזית תופיע קרוב יותר למועד"

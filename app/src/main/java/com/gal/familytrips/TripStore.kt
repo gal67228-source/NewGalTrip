@@ -40,8 +40,12 @@ class TripStore(private val context: Context) {
                 full.copy(
                     expenses = trip.expenses,
                     documents = trip.documents,
-                    restaurants = if (trip.restaurants.isEmpty()) full.restaurants else trip.restaurants
+                    restaurants = if (trip.restaurants.isEmpty()) full.restaurants else trip.restaurants,
+                    packingItems = if (trip.packingItems.isEmpty()) defaultPackingItems() else trip.packingItems,
+                    offlineMode = trip.offlineMode
                 )
+            } else if (trip.id == "budapest-2026" && trip.packingItems.isEmpty()) {
+                trip.copy(packingItems = defaultPackingItems())
             } else trip
         }
         return state.copy(trips = upgradedTrips)
@@ -69,6 +73,41 @@ class TripStore(private val context: Context) {
         notes = notes,
         mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
             android.net.Uri.encode(location.ifBlank { name })
+    )
+
+    private fun defaultPackingItems(): List<PackingItem> = listOf(
+        PackingItem("p1","דרכונים","מסמכים",false,1,"לכל הנוסעים"),
+        PackingItem("p2","ביטוח נסיעות","מסמכים",false,1,"פוליסה ומספר חירום"),
+        PackingItem("p3","כרטיסי טיסה / Boarding Pass","מסמכים"),
+        PackingItem("p4","אישורי מלונות והסעות","מסמכים"),
+        PackingItem("p5","כרטיסי אטרקציות ושייט","מסמכים"),
+        PackingItem("p6","ארנק וכרטיסי אשראי","כסף"),
+        PackingItem("p7","מעט מזומן מקומי","כסף"),
+        PackingItem("p8","טלפונים","אלקטרוניקה"),
+        PackingItem("p9","מטענים","אלקטרוניקה"),
+        PackingItem("p10","Power Bank","אלקטרוניקה"),
+        PackingItem("p11","מתאם חשמל","אלקטרוניקה"),
+        PackingItem("p12","אוזניות","אלקטרוניקה"),
+        PackingItem("p13","בגדי ים","בגדים",false,1,"לכל אחד"),
+        PackingItem("p14","בגדים להחלפה","בגדים"),
+        PackingItem("p15","נעלי הליכה נוחות","בגדים"),
+        PackingItem("p16","סוודר / שכבה דקה","בגדים"),
+        PackingItem("p17","כובעים","בגדים"),
+        PackingItem("p18","פיג'מות","בגדים"),
+        PackingItem("p19","מברשות ומשחת שיניים","רחצה"),
+        PackingItem("p20","שמפו וסבון","רחצה"),
+        PackingItem("p21","קרם הגנה","רחצה"),
+        PackingItem("p22","תרופות קבועות","בריאות"),
+        PackingItem("p23","ערכת עזרה ראשונה קטנה","בריאות"),
+        PackingItem("p24","תרופות לילדים לפי הצורך","בריאות"),
+        PackingItem("p25","בקבוקי מים","ילדים"),
+        PackingItem("p26","חטיפים לדרך","ילדים"),
+        PackingItem("p27","משחקים / טאבלט","ילדים"),
+        PackingItem("p28","מגבונים וטישו","ילדים"),
+        PackingItem("p29","עגלה מתקפלת אם צריך","ילדים"),
+        PackingItem("p30","תיק יום קטן","טיול יומי"),
+        PackingItem("p31","מטרייה מתקפלת","טיול יומי"),
+        PackingItem("p32","שקיות לבגדים רטובים","טיול יומי")
     )
 
     private fun defaultBudapestTrip(): Trip {
@@ -236,7 +275,8 @@ class TripStore(private val context: Context) {
                 Hotel("h1","Aquaworld Resort","2026-08-05","2026-08-08","Íves út 16, Budapest","https://www.google.com/maps/search/?api=1&query=Aquaworld+Resort+Budapest"),
                 Hotel("h2","7Seasons Apartments","2026-08-08","2026-08-11","Király u. 8, Budapest","https://www.google.com/maps/search/?api=1&query=7Seasons+Apartments+Budapest")
             ),
-            restaurants = restaurants
+            restaurants = restaurants,
+            packingItems = defaultPackingItems()
         )
     }
 

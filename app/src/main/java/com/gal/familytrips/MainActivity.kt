@@ -112,7 +112,11 @@ fun GalTripsApp(
 
     Scaffold(
         bottomBar = {
-            NavigationBar(containerColor = CardWhite, tonalElevation = 10.dp) {
+            NavigationBar(
+                containerColor = CardWhite,
+                tonalElevation = 10.dp,
+                modifier = Modifier.height(68.dp)
+            ) {
                 listOf(
                     Triple(Icons.Default.Home, "טיולים", 0),
                     Triple(Icons.Default.Today, "ימים", 1),
@@ -120,13 +124,21 @@ fun GalTripsApp(
                     Triple(Icons.Default.Restaurant, "מסעדות", 3),
                     Triple(Icons.Default.AttachMoney, "תקציב", 4),
                     Triple(Icons.Default.Description, "מסמכים", 5),
-                    Triple(Icons.Default.Info, "מידע", 6)
+                    Triple(Icons.Default.Info, "מידע", 6),
+                    Triple(Icons.Default.Luggage, "ציוד", 7)
                 ).forEach { (icon,label,index) ->
                     NavigationBarItem(
                         selected = tab == index,
                         onClick = { tab = index },
-                        icon = { Icon(icon, null) },
-                        label = { Text(label) }
+                        icon = {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = label,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        label = null,
+                        alwaysShowLabel = false
                     )
                 }
             }
@@ -155,7 +167,16 @@ fun GalTripsApp(
             3 -> RestaurantsScreen(trip, { onStateChange(state.replaceTrip(it)) }, onOpenUrl, Modifier.padding(padding))
             4 -> ExpensesScreen(trip, { onStateChange(state.replaceTrip(it)) }, Modifier.padding(padding))
             5 -> DocumentsScreen(trip, { onStateChange(state.replaceTrip(it)) }, Modifier.padding(padding))
-            6 -> GeneralInfoScreen(trip, Modifier.padding(padding))
+            6 -> GeneralInfoScreen(
+                trip = trip,
+                onTripChange = { onStateChange(state.replaceTrip(it)) },
+                modifier = Modifier.padding(padding)
+            )
+            7 -> PackingScreen(
+                trip = trip,
+                onTripChange = { onStateChange(state.replaceTrip(it)) },
+                modifier = Modifier.padding(padding)
+            )
         }
     }
 
