@@ -205,14 +205,24 @@ class TripStore(private val context: Context) {
         )
 
         val restaurants = listOf(
-            Restaurant("r1","d4",null,"VakVarjú Restaurant","MiniPolisz / 7Seasons","הונגרי ובינלאומי","בינוני","תפריט מגוון וקרוב למלון",mapsUrl="https://maps.google.com/?q=VakVarju+Restaurant+Budapest"),
-            Restaurant("r2","d4",null,"Bob's Kitchen Budapest","MiniPolisz / 7Seasons","אירופאי ביתי","בינוני","אווירה רגועה ומנות פשוטות",mapsUrl="https://maps.google.com/?q=Bob%27s+Kitchen+Budapest"),
-            Restaurant("r3","d4",null,"Jamie Oliver's Diner Budapest","מרכז העיר","פיצה, פסטה והמבורגרים","בינוני","מנות שילדים אוהבים",mapsUrl="https://maps.google.com/?q=Jamie+Oliver%27s+Diner+Budapest"),
-            Restaurant("r4","d4",null,"Hard Rock Cafe Budapest","Váci / Budapest Eye","אמריקאי","בינוני-גבוה","אווירה חווייתית לילדים",mapsUrl="https://maps.google.com/?q=Hard+Rock+Cafe+Budapest"),
-            Restaurant("r5","d5",null,"Gundel Cafe","גן החיות / Városliget","הונגרי קלאסי","גבוה","ממש ליד גן החיות",mapsUrl="https://maps.google.com/?q=Gundel+Budapest"),
-            Restaurant("r6","d5",null,"Városliget Café","אגם City Park","בית קפה ומסעדה","בינוני","נוף לאגם והפסקה נוחה",mapsUrl="https://maps.google.com/?q=Varosliget+Cafe+Budapest"),
-            Restaurant("r7","d6",null,"Arena Mall Food Court","Arena Mall","מגוון","נמוך-בינוני","בחירה קלה עם ילדים",mapsUrl="https://maps.google.com/?q=Arena+Mall+Budapest+restaurants"),
-            Restaurant("r8","d6",null,"Hippie Island","Margaret Island","בינלאומי","בינוני","מתאים לעצירה באי",mapsUrl="https://maps.google.com/?q=Hippie+Island+Budapest")
+            Restaurant("r1","d1",null,"Duna Restaurant – Aquaworld","Aquaworld Resort","מלון / בינלאומי","בינוני","נוח ביום ההגעה וללא נסיעה",mapsUrl="https://www.google.com/maps/search/?api=1&query=Duna+Restaurant+Aquaworld+Budapest"),
+            Restaurant("r2","d1",null,"Lobby Bar – Aquaworld","Aquaworld Resort","מנות קלות","בינוני","מתאים לארוחה קלה אחרי הבריכה",mapsUrl="https://www.google.com/maps/search/?api=1&query=Aquaworld+Resort+Budapest+restaurant"),
+            Restaurant("r3","d2",null,"Auchan Dunakeszi Food Court","Auchan Dunakeszi","מגוון","נמוך-בינוני","בחירה קלה עם ילדים בזמן הקניות",mapsUrl="https://www.google.com/maps/search/?api=1&query=restaurants+Auchan+Dunakeszi"),
+            Restaurant("r4","d2",null,"Duna Restaurant – Aquaworld","Aquaworld Resort","מלון / בינלאומי","בינוני","אפשרות נוחה לארוחת ערב",mapsUrl="https://www.google.com/maps/search/?api=1&query=Duna+Restaurant+Aquaworld+Budapest"),
+            Restaurant("r5","d3",null,"Duna Restaurant – Aquaworld","Aquaworld Resort","מלון / בינלאומי","בינוני","מתאים ליום מלא במלון",mapsUrl="https://www.google.com/maps/search/?api=1&query=Duna+Restaurant+Aquaworld+Budapest"),
+            Restaurant("r6","d3",null,"Aquaworld Lobby Bar","Aquaworld Resort","מנות קלות וקינוחים","בינוני","אפשרות גמישה בין הפעילויות",mapsUrl="https://www.google.com/maps/search/?api=1&query=Aquaworld+Lobby+Bar+Budapest"),
+            Restaurant("r7","d4",null,"VakVarjú Restaurant","MiniPolisz / 7Seasons","הונגרי ובינלאומי","בינוני","תפריט מגוון וקרוב למלון",mapsUrl="https://maps.google.com/?q=VakVarju+Restaurant+Budapest"),
+            Restaurant("r8","d4",null,"Bob's Kitchen Budapest","MiniPolisz / 7Seasons","אירופאי ביתי","בינוני","אווירה רגועה ומנות פשוטות",mapsUrl="https://maps.google.com/?q=Bob%27s+Kitchen+Budapest"),
+            Restaurant("r9","d4",null,"Jamie Oliver's Diner Budapest","מרכז העיר","פיצה, פסטה והמבורגרים","בינוני","מנות שילדים אוהבים",mapsUrl="https://maps.google.com/?q=Jamie+Oliver%27s+Diner+Budapest"),
+            Restaurant("r10","d4",null,"Hard Rock Cafe Budapest","Váci / Budapest Eye","אמריקאי","בינוני-גבוה","אווירה חווייתית באזור המרכז",mapsUrl="https://maps.google.com/?q=Hard+Rock+Cafe+Budapest"),
+            Restaurant("r11","d5",null,"Gundel Cafe","גן החיות / Városliget","הונגרי קלאסי","גבוה","ממש ליד גן החיות",mapsUrl="https://maps.google.com/?q=Gundel+Budapest"),
+            Restaurant("r12","d5",null,"Városliget Café","אגם City Park","בית קפה ומסעדה","בינוני","נוף לאגם והפסקה נוחה",mapsUrl="https://maps.google.com/?q=Varosliget+Cafe+Budapest"),
+            Restaurant("r13","d5",null,"Robinson Restaurant","אגם Városliget","בינלאומי","בינוני-גבוה","מיקום נעים על האגם",mapsUrl="https://www.google.com/maps/search/?api=1&query=Robinson+Restaurant+Budapest"),
+            Restaurant("r14","d6",null,"Arena Mall Food Court","Arena Mall","מגוון","נמוך-בינוני","בחירה קלה עם ילדים",mapsUrl="https://maps.google.com/?q=Arena+Mall+Budapest+restaurants"),
+            Restaurant("r15","d6",null,"Hippie Island","Margaret Island","בינלאומי","בינוני","מתאים לעצירה באי",mapsUrl="https://maps.google.com/?q=Hippie+Island+Budapest"),
+            Restaurant("r16","d6",null,"Széchenyi Restaurant","Margaret Island","הונגרי ובינלאומי","בינוני","אפשרות נוחה באזור האי",mapsUrl="https://www.google.com/maps/search/?api=1&query=restaurants+Margaret+Island+Budapest"),
+            Restaurant("r17","d7",null,"Budapest Airport Food Court","Terminal 2","מגוון","בינוני","ארוחה קלה לפני הטיסה",mapsUrl="https://www.google.com/maps/search/?api=1&query=Budapest+Airport+Terminal+2+restaurants"),
+            Restaurant("r18","d7",null,"Cafe at Budapest Airport","Terminal 2","קפה וכריכים","בינוני","מתאים בזמן ההמתנה לטיסה",mapsUrl="https://www.google.com/maps/search/?api=1&query=cafe+Budapest+Airport+Terminal+2")
         )
 
         return Trip(

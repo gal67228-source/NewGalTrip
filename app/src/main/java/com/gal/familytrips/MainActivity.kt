@@ -119,7 +119,8 @@ fun GalTripsApp(
                     Triple(Icons.Default.Hotel, "מלונות", 2),
                     Triple(Icons.Default.Restaurant, "מסעדות", 3),
                     Triple(Icons.Default.AttachMoney, "תקציב", 4),
-                    Triple(Icons.Default.Description, "מסמכים", 5)
+                    Triple(Icons.Default.Description, "מסמכים", 5),
+                    Triple(Icons.Default.Info, "מידע", 6)
                 ).forEach { (icon,label,index) ->
                     NavigationBarItem(
                         selected = tab == index,
@@ -154,6 +155,7 @@ fun GalTripsApp(
             3 -> RestaurantsScreen(trip, { onStateChange(state.replaceTrip(it)) }, onOpenUrl, Modifier.padding(padding))
             4 -> ExpensesScreen(trip, { onStateChange(state.replaceTrip(it)) }, Modifier.padding(padding))
             5 -> DocumentsScreen(trip, { onStateChange(state.replaceTrip(it)) }, Modifier.padding(padding))
+            6 -> GeneralInfoScreen(trip, Modifier.padding(padding))
         }
     }
 
@@ -312,6 +314,9 @@ private fun DaysScreen(
             end = Navy
         )
 
+        DynamicClockBar(trip)
+        Spacer(Modifier.height(10.dp))
+
         AccentButton(
             text = "הוספת יום",
             emoji = "＋",
@@ -334,7 +339,7 @@ private fun DaysScreen(
                     onClick = { onSelectDay(day.id) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(184.dp),
+                        .height(252.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = CardWhite),
                     border = BorderStroke(1.dp, Color(0xFFE4EAF1)),
@@ -350,7 +355,13 @@ private fun DaysScreen(
                             imageKey = day.imageKey,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(68.dp)
+                                .height(62.dp)
+                        )
+
+                        WeatherCard(
+                            trip = trip,
+                            day = day,
+                            modifier = Modifier.fillMaxWidth()
                         )
 
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -516,6 +527,10 @@ private fun DayDetailScreen(
             }
         }
 
+        Spacer(Modifier.height(9.dp))
+        DynamicClockBar(trip)
+        Spacer(Modifier.height(8.dp))
+        WeatherCard(trip = trip, day = day, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(9.dp))
 
         Row(
@@ -726,6 +741,15 @@ private fun DayDetailScreen(
                     }
                 }
             }
+
+            item {
+                val dayRestaurants = trip.restaurants.filter { it.dayId == day.id }
+                DayRestaurantsCard(
+                    day = day,
+                    restaurants = dayRestaurants,
+                    onOpenUrl = onOpenUrl
+                )
+            }
         }
     }
 
@@ -764,6 +788,82 @@ private fun DayDetailScreen(
                 )
                 editingActivity = null
             }
+        )
+    }
+}
+
+@Composable
+private fun DayRestaurantsCard(
+    day: TripDay,
+    restaurants: List<Restaurant>,
+    onOpenUrl: (String) -> Unit
+) {
+    SectionCard(containerColor = SoftCoral) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("🍽️", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text("מסעדות באזור היום", fontWeight = FontWeight.Bold)
+                Text(day.title, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            }
+        }
+
+        if (restaurants.isEmpty()) {
+            Text("לא נשמרו עדיין מסעדות ליום הזה", color = TextSecondary)
+        } else {
+            restaurants.forEach { restaurant ->
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = CardWhite,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFDCD6))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(11.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(restaurant.name, fontWeight = FontWeight.Bold)
+                            Text(
+                                listOf(restaurant.area, restaurant.type, restaurant.price)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                onOpenUrl(
+                                    restaurant.mapsUrl.ifBlank {
+                                        "https://www.google.com/maps/search/?api=1&query=" +
+                                            Uri.encode(restaurant.name + " " + restaurant.area)
+                                    }
+                                )
+                            }
+                        ) {
+                            GoogleMapsBrandIcon(Modifier.size(30.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        SoftActionButton(
+            text = "חיפוש מסעדות נוספות באזור",
+            emoji = "🔎",
+            onClick = {
+                val area = day.activities.firstOrNull { it.location.isNotBlank() }?.location
+                    ?: day.title
+                onOpenUrl(
+                    "https://www.google.com/maps/search/?api=1&query=" +
+                        Uri.encode("family restaurants near $area")
+                )
+            },
+            container = CardWhite,
+            contentColor = Coral,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
@@ -856,9 +956,21 @@ private fun ActivityEditorDialog(
 }
 
 @Composable
-private fun HotelsScreen(trip: Trip, onTripChange: (Trip) -> Unit, onOpenUrl: (String) -> Unit, modifier: Modifier) {
+private fun HotelsScreen(
+    trip: Trip,
+    onTripChange: (Trip) -> Unit,
+    onOpenUrl: (String) -> Unit,
+    modifier: Modifier
+) {
     var add by remember { mutableStateOf(false) }
-    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
         item {
             GradientHeader(
                 title = "מלונות",
@@ -867,67 +979,283 @@ private fun HotelsScreen(trip: Trip, onTripChange: (Trip) -> Unit, onOpenUrl: (S
                 start = Aqua,
                 end = Navy
             )
-            AccentButton("הוספת מלון", "＋", { add = true }, color = Aqua, modifier = Modifier.fillMaxWidth())
+            DynamicClockBar(trip)
+            Spacer(Modifier.height(10.dp))
+            AccentButton(
+                text = "הוספת מלון",
+                emoji = "＋",
+                onClick = { add = true },
+                color = Aqua,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
-        items(trip.hotels) { h ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(h.name, fontWeight = FontWeight.Bold)
-                    Text("${h.checkIn}–${h.checkOut}")
-                    Text(h.address)
-                    Row {
-                        TextButton(onClick = { onOpenUrl(h.mapsUrl.ifBlank { "https://www.google.com/maps/search/?api=1&query=${Uri.encode(h.address)}" }) }) { Text("Maps") }
-                        IconButton(onClick = { onTripChange(trip.copy(hotels = trip.hotels.filterNot { it.id == h.id })) }) { Icon(Icons.Default.Delete, null) }
+
+        items(trip.hotels, key = { it.id }) { hotel ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = CardWhite),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDEEF1)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        DayThumbnail("hotel", Modifier.size(58.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                hotel.name,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(hotel.address, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MetaChip("כניסה ${hotel.checkIn}", SoftAqua, Color(0xFF087C8A))
+                        MetaChip("יציאה ${hotel.checkOut}", SoftBlue, Sky)
+                    }
+
+                    if (hotel.notes.isNotBlank()) {
+                        Text(hotel.notes, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    }
+
+                    HorizontalDivider(color = Color(0xFFE8EDF3))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = {
+                                onOpenUrl(
+                                    hotel.mapsUrl.ifBlank {
+                                        "https://www.google.com/maps/search/?api=1&query=" +
+                                            Uri.encode(hotel.address.ifBlank { hotel.name })
+                                    }
+                                )
+                            }
+                        ) {
+                            GoogleMapsBrandIcon(Modifier.size(32.dp))
+                        }
+
+                        IconButton(
+                            onClick = {
+                                onOpenUrl(
+                                    "https://waze.com/ul?q=" +
+                                        Uri.encode(hotel.address.ifBlank { hotel.name }) +
+                                        "&navigate=yes"
+                                )
+                            }
+                        ) {
+                            WazeBrandIcon(Modifier.size(32.dp))
+                        }
+
+                        Spacer(Modifier.weight(1f))
+
+                        IconButton(
+                            onClick = {
+                                onTripChange(
+                                    trip.copy(hotels = trip.hotels.filterNot { it.id == hotel.id })
+                                )
+                            }
+                        ) {
+                            SmallDeleteIcon(Modifier.size(30.dp))
+                        }
                     }
                 }
             }
         }
     }
+
     if (add) {
-        SimpleTextDialog("מלון חדש", listOf("שם","צ'ק-אין","צ'ק-אאוט","כתובת"),
-            { add = false }) { v ->
-            onTripChange(trip.copy(hotels = trip.hotels + Hotel(UUID.randomUUID().toString(),v[0],v[1],v[2],v[3],
-                "https://www.google.com/maps/search/?api=1&query=${Uri.encode(v[3].ifBlank { v[0] })}")))
-            add = false
-        }
+        SimpleTextDialog(
+            title = "מלון חדש",
+            fields = listOf("שם", "צ'ק-אין", "צ'ק-אאוט", "כתובת"),
+            onDismiss = { add = false },
+            onConfirm = { values ->
+                onTripChange(
+                    trip.copy(
+                        hotels = trip.hotels + Hotel(
+                            id = UUID.randomUUID().toString(),
+                            name = values[0],
+                            checkIn = values[1],
+                            checkOut = values[2],
+                            address = values[3],
+                            mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
+                                Uri.encode(values[3].ifBlank { values[0] })
+                        )
+                    )
+                )
+                add = false
+            }
+        )
     }
 }
 
 @Composable
-private fun RestaurantsScreen(trip: Trip, onTripChange: (Trip) -> Unit, onOpenUrl: (String) -> Unit, modifier: Modifier) {
+private fun RestaurantsScreen(
+    trip: Trip,
+    onTripChange: (Trip) -> Unit,
+    onOpenUrl: (String) -> Unit,
+    modifier: Modifier
+) {
     var add by remember { mutableStateOf(false) }
-    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val grouped = trip.days.sortedBy { it.date }.map { day ->
+        day to trip.restaurants.filter { it.dayId == day.id }
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
         item {
             GradientHeader(
                 title = "מסעדות",
-                subtitle = "מקומות מומלצים ליד המסלול",
+                subtitle = "המלצות לפי האזור של כל יום",
                 emoji = "🍽️",
                 start = Coral,
                 end = Color(0xFFB84A3A)
             )
-            AccentButton("הוספת מסעדה", "＋", { add = true }, color = Coral, modifier = Modifier.fillMaxWidth())
+            AccentButton(
+                text = "הוספת מסעדה",
+                emoji = "＋",
+                onClick = { add = true },
+                color = Coral,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
-        items(trip.restaurants) { r ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(r.name, fontWeight = FontWeight.Bold)
-                    Text("${r.area} · ${r.type} · ${r.price}")
-                    if (r.notes.isNotBlank()) Text(r.notes)
-                    Row {
-                        TextButton(onClick = { onOpenUrl(r.mapsUrl.ifBlank { "https://www.google.com/maps/search/?api=1&query=${Uri.encode(r.name)}" }) }) { Text("Maps") }
-                        IconButton(onClick = { onTripChange(trip.copy(restaurants = trip.restaurants.filterNot { it.id == r.id })) }) { Icon(Icons.Default.Delete, null) }
+
+        grouped.forEach { (day, restaurants) ->
+            item(key = "header-${day.id}") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DayThumbnail(day.imageKey, Modifier.size(44.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(day.title, fontWeight = FontWeight.Bold)
+                        Text(day.date, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                     }
+                }
+            }
+
+            items(restaurants, key = { it.id }) { restaurant ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardWhite),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFDDD7)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(15.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(SoftCoral),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🍴")
+                            }
+
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(restaurant.name, fontWeight = FontWeight.Bold)
+                                Text(
+                                    listOf(restaurant.area, restaurant.type)
+                                        .filter { it.isNotBlank() }
+                                        .joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                            }
+                            if (restaurant.price.isNotBlank()) {
+                                MetaChip(restaurant.price, SoftSun, Color(0xFF8F6500))
+                            }
+                        }
+
+                        if (restaurant.notes.isNotBlank()) {
+                            Text(restaurant.notes, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
+
+                        HorizontalDivider(color = Color(0xFFE8EDF3))
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = {
+                                    onOpenUrl(
+                                        restaurant.mapsUrl.ifBlank {
+                                            "https://www.google.com/maps/search/?api=1&query=" +
+                                                Uri.encode(restaurant.name + " " + restaurant.area)
+                                        }
+                                    )
+                                }
+                            ) {
+                                GoogleMapsBrandIcon(Modifier.size(32.dp))
+                            }
+
+                            Spacer(Modifier.weight(1f))
+
+                            IconButton(
+                                onClick = {
+                                    onTripChange(
+                                        trip.copy(
+                                            restaurants = trip.restaurants.filterNot { it.id == restaurant.id }
+                                        )
+                                    )
+                                }
+                            ) {
+                                SmallDeleteIcon(Modifier.size(30.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (restaurants.isEmpty()) {
+                item(key = "empty-${day.id}") {
+                    Text(
+                        "אין עדיין מסעדות שמורות ליום הזה",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
                 }
             }
         }
     }
+
     if (add) {
-        SimpleTextDialog("מסעדה חדשה", listOf("שם","אזור","סוג","מחיר","הערה"),
-            { add = false }) { v ->
-            onTripChange(trip.copy(restaurants = trip.restaurants + Restaurant(UUID.randomUUID().toString(),name=v[0],area=v[1],type=v[2],price=v[3],notes=v[4],
-                mapsUrl="https://www.google.com/maps/search/?api=1&query=${Uri.encode(v[0] + " " + v[1])}")))
-            add = false
-        }
+        SimpleTextDialog(
+            title = "מסעדה חדשה",
+            fields = listOf("שם", "אזור", "סוג", "מחיר", "הערה"),
+            onDismiss = { add = false },
+            onConfirm = { values ->
+                val defaultDayId = trip.days.firstOrNull()?.id
+                onTripChange(
+                    trip.copy(
+                        restaurants = trip.restaurants + Restaurant(
+                            id = UUID.randomUUID().toString(),
+                            dayId = defaultDayId,
+                            name = values[0],
+                            area = values[1],
+                            type = values[2],
+                            price = values[3],
+                            notes = values[4],
+                            mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
+                                Uri.encode(values[0] + " " + values[1])
+                        )
+                    )
+                )
+                add = false
+            }
+        )
     }
 }
 
@@ -974,41 +1302,184 @@ private fun ExpensesScreen(trip: Trip, onTripChange: (Trip) -> Unit, modifier: M
 }
 
 @Composable
-private fun DocumentsScreen(trip: Trip, onTripChange: (Trip) -> Unit, modifier: Modifier) {
+private fun DocumentsScreen(
+    trip: Trip,
+    onTripChange: (Trip) -> Unit,
+    modifier: Modifier
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    var pendingType by remember { mutableStateOf("כללי") }
+
+    val requiredDocs = listOf(
+        Triple("טיסת הלוך W6 2506", "טיסות", "כרטיסי טיסה / Boarding Pass"),
+        Triple("טיסת חזור W6 2327", "טיסות", "כרטיסי טיסה / Boarding Pass"),
+        Triple("Aquaworld Resort", "מלונות", "אישור הזמנה / Voucher"),
+        Triple("7Seasons Apartments", "מלונות", "אישור הזמנה / Voucher"),
+        Triple("הסעה 8.8 למלון", "הסעות", "אישור Welcome Pickups"),
+        Triple("הסעה 11.8 לשדה", "הסעות", "אישור Welcome Pickups"),
+        Triple("MiniPolisz", "אטרקציות", "כרטיס / אישור הזמנה"),
+        Triple("Budapest Zoo", "אטרקציות", "כרטיסים אם נרכשו מראש"),
+        Triple("שייט על הדנובה", "אטרקציות", "Voucher / QR code"),
+        Triple("ביטוח נסיעות", "ביטוח", "פוליסה ומספר חירום"),
+        Triple("צילומי דרכונים", "מסמכים אישיים", "עותק מאובטח לכל נוסע"),
+        Triple("כרטיסי תחבורה / BudapestGO", "תחבורה", "אישור או צילום מסך אם נרכש מראש")
+    )
+
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
-            runCatching { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            val doc = TripDocument(UUID.randomUUID().toString(), it.lastPathSegment ?: "מסמך", it.toString())
-            onTripChange(trip.copy(documents = trip.documents + doc))
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            val document = TripDocument(
+                id = UUID.randomUUID().toString(),
+                name = it.lastPathSegment ?: pendingType,
+                uri = it.toString(),
+                type = pendingType
+            )
+            onTripChange(trip.copy(documents = trip.documents + document))
         }
     }
 
-    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
         item {
             GradientHeader(
                 title = "מסמכים",
-                subtitle = "כרטיסים, הזמנות וקבצים חשובים",
+                subtitle = "רשימת חובה לפי ההזמנות בטיול",
                 emoji = "🎫",
                 start = Mint,
                 end = Color(0xFF378A63)
             )
-            AccentButton("הוספת מסמך", "＋", { launcher.launch(arrayOf("*/*")) }, color = Mint, modifier = Modifier.fillMaxWidth())
+
+            val completed = requiredDocs.count { (_, type, title) ->
+                trip.documents.any { doc ->
+                    doc.type == type ||
+                        doc.name.contains(title.substringBefore(" "), ignoreCase = true)
+                }
+            }
+
+            SectionCard(containerColor = SoftMint) {
+                Text(
+                    "$completed מתוך ${requiredDocs.size} מסמכים נוספו",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF276B4A)
+                )
+                LinearProgressIndicator(
+                    progress = { completed.toFloat() / requiredDocs.size.toFloat() },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Mint,
+                    trackColor = CardWhite
+                )
+            }
         }
-        items(trip.documents) { d ->
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column { Text(d.name, fontWeight = FontWeight.Bold); Text(d.type) }
-                    Row {
-                        TextButton(onClick = {
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(d.uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+
+        items(requiredDocs, key = { it.first }) { (title, type, description) ->
+            val matching = trip.documents.filter { it.type == type }
+            val isAdded = matching.isNotEmpty()
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isAdded) SoftMint else CardWhite
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (isAdded) Color(0xFFBEE6CF) else Color(0xFFE3E9F0)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (isAdded) "✅" else "📄")
+                        Spacer(Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(title, fontWeight = FontWeight.Bold)
+                            Text(description, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            Text(type, style = MaterialTheme.typography.labelSmall, color = Mint)
+                        }
+
+                        FilledTonalButton(
+                            onClick = {
+                                pendingType = type
+                                launcher.launch(arrayOf("*/*"))
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (isAdded) CardWhite else SoftMint,
+                                contentColor = Color(0xFF2E7D56)
+                            )
+                        ) {
+                            Text(if (isAdded) "הוסף עוד" else "הוספה")
+                        }
+                    }
+
+                    matching.forEach { doc ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = CardWhite
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(9.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(doc.name, modifier = Modifier.weight(1f), maxLines = 1)
+
+                                TextButton(
+                                    onClick = {
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(Intent.ACTION_VIEW, Uri.parse(doc.uri))
+                                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Text("פתיחה")
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        onTripChange(
+                                            trip.copy(
+                                                documents = trip.documents.filterNot { it.id == doc.id }
+                                            )
+                                        )
+                                    }
+                                ) {
+                                    SmallDeleteIcon(Modifier.size(28.dp))
+                                }
                             }
-                        }) { Text("פתיחה") }
-                        IconButton(onClick = { onTripChange(trip.copy(documents = trip.documents.filterNot { it.id == d.id })) }) { Icon(Icons.Default.Delete, null) }
+                        }
                     }
                 }
             }
+        }
+
+        item {
+            AccentButton(
+                text = "הוספת מסמך כללי",
+                emoji = "＋",
+                onClick = {
+                    pendingType = "כללי"
+                    launcher.launch(arrayOf("*/*"))
+                },
+                color = Mint,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
