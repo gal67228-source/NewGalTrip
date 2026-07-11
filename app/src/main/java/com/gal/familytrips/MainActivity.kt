@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.util.UUID
 
@@ -1314,6 +1315,7 @@ private fun DayDetailScreen(
 
     if (quickAddActivity) {
         QuickActivityDialog(
+            trip = trip,
             day = day,
             onDismiss = { quickAddActivity = false },
             onOpenFullEditor = {
@@ -1519,11 +1521,14 @@ private fun CompactActionCircle(
 
 @Composable
 private fun QuickActivityDialog(
+    trip: Trip,
     day: TripDay,
     onDismiss: () -> Unit,
     onOpenFullEditor: () -> Unit,
     onConfirm: (ActivityItem) -> Unit
 ) {
+    val context = LocalContext.current
+
     var selectedPreset by remember {
         mutableStateOf(activityPresets.first())
     }
@@ -1531,20 +1536,161 @@ private fun QuickActivityDialog(
     var name by remember { mutableStateOf(selectedPreset.defaultName) }
     var location by remember { mutableStateOf("") }
     var duration by remember { mutableStateOf(selectedPreset.duration) }
+    var selectedSuggestionId by remember { mutableStateOf<String?>(null) }
+    var networkSuggestions by remember {
+        mutableStateOf<List<SmartPlaceSuggestion>>(emptyList())
+    }
+    var searching by remember { mutableStateOf(false) }
+
+    val previousActivity = remember(day.activities) {
+        day.activities
+            .sortedBy { activityTimeMinutes(it.time) ?: Int.MAX_VALUE }
+            .lastOrNull()
+    }
+
+    val previousLocation = previousActivity
+        ?.location
+        ?.takeIf { it.isNotBlank() }
+        ?: previousActivity
+            ?.name
+            ?.takeIf { it.isNotBlank() }
+
+    val savedSuggestions = remember(
+        trip.id,
+        trip.hotels,
+        trip.restaurants,
+        trip.days,
+        selectedPreset.key,
+        name
+    ) {
+        val query = name.trim().lowercase()
+
+        val hotels = trip.hotels.map { hotel ->
+            SmartPlaceSuggestion(
+                id = "hotel-${hotel.id}",
+                title = hotel.name,
+                address = hotel.address,
+                source = "מלון שמור",
+                mapsUrl = hotel.mapsUrl
+            )
+        }
+
+        val restaurants = trip.restaurants.map { restaurant ->
+            SmartPlaceSuggestion(
+                id = "restaurant-${restaurant.id}",
+                title = restaurant.name,
+                address = restaurant.area,
+                source = "מסעדה שמורה",
+                mapsUrl = restaurant.mapsUrl
+            )
+        }
+
+        val activities = trip.days
+            .flatMap { it.activities }
+            .filter {
+                it.location.isNotBlank() || it.mapsUrl.isNotBlank()
+            }
+            .map { activity ->
+                SmartPlaceSuggestion(
+                    id = "activity-${activity.id}",
+                    title = activity.name,
+                    address = activity.location,
+                    source = "פעילות מהטיול",
+                    mapsUrl = activity.mapsUrl
+                )
+            }
+
+        val preferred = when (selectedPreset.key) {
+            "hotel" -> hotels
+            "meal" -> restaurants + hotels + activities
+            else -> hotels + restaurants + activities
+        }
+
+        preferred
+            .filter { suggestion ->
+                query.length < 2 ||
+                    suggestion.title.lowercase().contains(query) ||
+                    suggestion.address.lowercase().contains(query)
+            }
+            .distinctBy {
+                "${it.title.lowercase()}|${it.address.lowercase()}"
+            }
+            .take(6)
+    }
+
+    val visibleSuggestions = remember(
+        savedSuggestions,
+        networkSuggestions,
+        selectedPreset.key
+    ) {
+        val combined = if (selectedPreset.key == "hotel") {
+            savedSuggestions
+        } else {
+            savedSuggestions + networkSuggestions
+        }
+
+        combined
+            .distinctBy {
+                "${it.title.lowercase()}|${it.address.lowercase()}"
+            }
+            .take(8)
+    }
+
+    LaunchedEffect(
+        name,
+        selectedPreset.key,
+        trip.destination,
+        trip.offlineMode
+    ) {
+        networkSuggestions = emptyList()
+
+        val normalized = name.trim()
+        val isDefaultName = normalized == selectedPreset.defaultName
+
+        if (
+            selectedPreset.key == "hotel" ||
+            trip.offlineMode ||
+            normalized.length < 3 ||
+            isDefaultName
+        ) {
+            searching = false
+            return@LaunchedEffect
+        }
+
+        delay(700)
+        searching = true
+        networkSuggestions = AndroidPlaceSearch.search(
+            context = context,
+            query = normalized,
+            destinationContext = trip.destinationStops
+                .firstOrNull()
+                ?: trip.destination
+        )
+        searching = false
+    }
 
     fun selectPreset(preset: ActivityPreset) {
         selectedPreset = preset
         name = preset.defaultName
+        location = ""
         duration = preset.duration
+        selectedSuggestionId = null
+        networkSuggestions = emptyList()
+    }
+
+    fun selectSuggestion(suggestion: SmartPlaceSuggestion) {
+        selectedSuggestionId = suggestion.id
+        name = suggestion.title
+        location = suggestion.address.ifBlank { suggestion.title }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {
-                Text("הוספת פעילות מהירה")
+                Text("הוספת פעילות חכמה")
                 Text(
-                    "בחר סוג והזן רק את הפרטים החשובים",
+                    "חפש מקום או בחר מתוך הנתונים שכבר שמורים בטיול",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
@@ -1580,6 +1726,25 @@ private fun QuickActivityDialog(
                     }
                 }
 
+                if (
+                    selectedPreset.key == "hotel" &&
+                    trip.hotels.isEmpty()
+                ) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = SoftSun
+                        ) {
+                            Text(
+                                "עדיין לא נשמרו מלונות בטיול. אפשר להזין מלון ידנית או להוסיף אותו קודם במסך המלונות.",
+                                modifier = Modifier.padding(11.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF7D5B00)
+                            )
+                        }
+                    }
+                }
+
                 item {
                     OutlinedTextField(
                         value = time,
@@ -1593,21 +1758,185 @@ private fun QuickActivityDialog(
                 item {
                     OutlinedTextField(
                         value = name,
-                        onValueChange = { name = it },
-                        label = { Text("שם הפעילות") },
+                        onValueChange = {
+                            name = it
+                            selectedSuggestionId = null
+                        },
+                        label = {
+                            Text(
+                                if (selectedPreset.key == "hotel") {
+                                    "חיפוש מלון שמור"
+                                } else {
+                                    "חיפוש שם פעילות או מקום"
+                                }
+                            )
+                        },
+                        leadingIcon = {
+                            Text(selectedPreset.emoji)
+                        },
+                        trailingIcon = {
+                            when {
+                                searching -> {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                                selectedSuggestionId != null -> {
+                                    Text("✓", color = Mint)
+                                }
+                            }
+                        },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
 
+                if (visibleSuggestions.isNotEmpty()) {
+                    item {
+                        Text(
+                            if (selectedPreset.key == "hotel") {
+                                "מלונות במסלול"
+                            } else {
+                                "הצעות"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+
+                    items(
+                        visibleSuggestions,
+                        key = { it.id }
+                    ) { suggestion ->
+                        Surface(
+                            onClick = {
+                                selectSuggestion(suggestion)
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (
+                                selectedSuggestionId == suggestion.id
+                            ) {
+                                SoftMint
+                            } else {
+                                CardWhite
+                            },
+                            border = BorderStroke(
+                                if (
+                                    selectedSuggestionId == suggestion.id
+                                ) {
+                                    2.dp
+                                } else {
+                                    1.dp
+                                },
+                                if (
+                                    selectedSuggestionId == suggestion.id
+                                ) {
+                                    Mint
+                                } else {
+                                    Color(0xFFE3E9F0)
+                                }
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    when (suggestion.source) {
+                                        "מלון שמור" -> "🏨"
+                                        "מסעדה שמורה" -> "🍽️"
+                                        "פעילות מהטיול" -> "📍"
+                                        else -> "🔎"
+                                    }
+                                )
+
+                                Spacer(Modifier.width(8.dp))
+
+                                Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        suggestion.title,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Navy
+                                    )
+                                    if (suggestion.address.isNotBlank()) {
+                                        Text(
+                                            suggestion.address,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = TextSecondary,
+                                            maxLines = 2
+                                        )
+                                    }
+                                    Text(
+                                        suggestion.source,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Sky
+                                    )
+                                }
+
+                                if (
+                                    selectedSuggestionId == suggestion.id
+                                ) {
+                                    Text("✓", color = Mint)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 item {
                     OutlinedTextField(
                         value = location,
-                        onValueChange = { location = it },
-                        label = { Text("מיקום – אפשר להשאיר ריק") },
-                        singleLine = true,
+                        onValueChange = {
+                            location = it
+                            selectedSuggestionId = null
+                        },
+                        label = {
+                            Text("כתובת או מיקום")
+                        },
+                        supportingText = {
+                            Text(
+                                "מתמלא אוטומטית לאחר בחירת מקום"
+                            )
+                        },
+                        singleLine = false,
+                        maxLines = 2,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+
+                if (previousLocation != null) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = SoftAqua
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(11.dp),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text(
+                                    "ניווט מהמיקום הקודם",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Aqua
+                                )
+                                Text(
+                                    previousLocation,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    "קישור Google Maps ייבנה אוטומטית מנקודה זו אל הפעילות החדשה.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
                 }
 
                 item {
@@ -1648,7 +1977,11 @@ private fun QuickActivityDialog(
                                 )
                             }
                             Text(
-                                "קישורי Maps ו-Waze ייווצרו מהמיקום",
+                                if (previousLocation == null) {
+                                    "ייפתח חיפוש של היעד ב-Google Maps"
+                                } else {
+                                    "ייפתח מסלול מהמיקום הקודם ליעד החדש"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextSecondary
                             )
@@ -1670,7 +2003,33 @@ private fun QuickActivityDialog(
             TextButton(
                 enabled = name.isNotBlank(),
                 onClick = {
-                    val query = location.ifBlank { name }
+                    val destinationQuery = location.ifBlank { name }
+                    val selectedSuggestion = visibleSuggestions
+                        .firstOrNull {
+                            it.id == selectedSuggestionId
+                        }
+
+                    val mapsUrl = when {
+                        previousLocation != null -> {
+                            "https://www.google.com/maps/dir/?api=1" +
+                                "&origin=" +
+                                Uri.encode(previousLocation) +
+                                "&destination=" +
+                                Uri.encode(destinationQuery)
+                        }
+                        !selectedSuggestion?.mapsUrl.isNullOrBlank() -> {
+                            selectedSuggestion!!.mapsUrl
+                        }
+                        else -> {
+                            "https://www.google.com/maps/search/?api=1&query=" +
+                                Uri.encode(destinationQuery)
+                        }
+                    }
+
+                    val directionsText = previousLocation?.let {
+                        "ניווט מ-$it אל $destinationQuery"
+                    }.orEmpty()
+
                     onConfirm(
                         ActivityItem(
                             id = UUID.randomUUID().toString(),
@@ -1678,13 +2037,11 @@ private fun QuickActivityDialog(
                             name = name.trim(),
                             location = location.trim(),
                             transport = selectedPreset.transport,
-                            directions = "",
+                            directions = directionsText,
                             duration = duration.trim(),
                             cost = "",
                             notes = selectedPreset.notes,
-                            mapsUrl =
-                                "https://www.google.com/maps/search/?api=1&query=" +
-                                    Uri.encode(query),
+                            mapsUrl = mapsUrl,
                             completed = false
                         )
                     )
@@ -1699,6 +2056,18 @@ private fun QuickActivityDialog(
             }
         }
     )
+}
+
+private fun activityTimeMinutes(value: String): Int? {
+    val match = Regex("""(\d{1,2}):(\d{2})""").find(value)
+        ?: return null
+
+    val hour = match.groupValues[1].toIntOrNull()
+        ?: return null
+    val minute = match.groupValues[2].toIntOrNull()
+        ?: return null
+
+    return hour * 60 + minute
 }
 
 private fun nextSuggestedTime(day: TripDay): String {
