@@ -34,7 +34,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.semantics
@@ -1365,7 +1364,6 @@ private fun EditDayDialog(
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DayDetailScreen(
     trip: Trip,
@@ -1521,21 +1519,15 @@ private fun DayDetailScreen(
                 key = { it.id }
             ) { activity ->
                 val isDragging = draggingActivityId == activity.id
-                val animatedElevationOffset by animateFloatAsState(
-                    targetValue = if (isDragging) 1f else 0f,
-                    label = "dragElevation"
-                )
 
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .animateItemPlacement()
-                        .graphicsLayer {
-                            translationY = if (isDragging) dragOffsetY else 0f
-                            scaleX = 1f + animatedElevationOffset * 0.015f
-                            scaleY = 1f + animatedElevationOffset * 0.015f
-                            shadowElevation = animatedElevationOffset * 18f
-                            alpha = if (isDragging) 0.96f else 1f
+                        .offset {
+                            androidx.compose.ui.unit.IntOffset(
+                                x = 0,
+                                y = if (isDragging) dragOffsetY.toInt() else 0
+                            )
                         },
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(
@@ -1948,14 +1940,8 @@ private fun ActivityDragHandle(
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit
 ) {
-    val background by animateColorAsState(
-        targetValue = if (isDragging) Sky else SoftBlue,
-        label = "dragHandleBackground"
-    )
-    val foreground by animateColorAsState(
-        targetValue = if (isDragging) Color.White else Sky,
-        label = "dragHandleForeground"
-    )
+    val background = if (isDragging) Sky else SoftBlue
+    val foreground = if (isDragging) Color.White else Sky
 
     Box(
         modifier = Modifier
