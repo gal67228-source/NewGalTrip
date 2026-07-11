@@ -2389,10 +2389,16 @@ private fun DocumentsScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var pendingRequirement by remember { mutableStateOf<DocumentRequirement?>(null) }
+    var pendingPassengerName by remember { mutableStateOf("") }
+    var askPassengerName by remember { mutableStateOf(false) }
+
     val requirements = suggestedDocumentRequirements(trip)
 
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
         val requirement = pendingRequirement
+
         if (uri != null && requirement != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
@@ -2400,16 +2406,46 @@ private fun DocumentsScreen(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }
+
+            val baseName = uri.lastPathSegment ?: requirement.title
+            val finalName = if (
+                requirement.type == "טיסות" &&
+                pendingPassengerName.isNotBlank()
+            ) {
+                "$pendingPassengerName - $baseName"
+            } else {
+                baseName
+            }
+
             val document = TripDocument(
                 id = UUID.randomUUID().toString(),
-                name = uri.lastPathSegment ?: requirement.title,
+                name = finalName,
                 uri = uri.toString(),
                 type = requirement.type,
-                notes = requirement.key
+                notes = requirement.key,
+                passengerName = pendingPassengerName.trim()
             )
-            onTripChange(trip.copy(documents = trip.documents + document))
+
+            onTripChange(
+                trip.copy(
+                    documents = trip.documents + document
+                )
+            )
         }
+
         pendingRequirement = null
+        pendingPassengerName = ""
+    }
+
+    fun startDocumentUpload(requirement: DocumentRequirement) {
+        pendingRequirement = requirement
+
+        if (requirement.type == "טיסות") {
+            askPassengerName = true
+        } else {
+            pendingPassengerName = ""
+            launcher.launch(arrayOf("*/*"))
+        }
     }
 
     LazyColumn(
@@ -2431,20 +2467,26 @@ private fun DocumentsScreen(
             val completed = requirements.count { requirement ->
                 trip.documents.any { document ->
                     document.notes == requirement.key ||
-                        document.name.contains(requirement.title, ignoreCase = true)
+                        document.name.contains(
+                            requirement.title,
+                            ignoreCase = true
+                        )
                 }
             }
 
             SectionCard(containerColor = SoftMint) {
                 Text(
-                    "$completed מתוך ${requirements.size} מסמכים נוספו",
+                    "$completed מתוך ${requirements.size} סוגי מסמכים נוספו",
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF276B4A)
                 )
                 LinearProgressIndicator(
                     progress = {
-                        if (requirements.isEmpty()) 0f
-                        else completed.toFloat() / requirements.size.toFloat()
+                        if (requirements.isEmpty()) {
+                            0f
+                        } else {
+                            completed.toFloat() / requirements.size.toFloat()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     color = Mint,
@@ -2456,9 +2498,14 @@ private fun DocumentsScreen(
         items(requirements, key = { it.key }) { requirement ->
             val matching = trip.documents.filter {
                 it.notes == requirement.key ||
-                    it.name.contains(requirement.title, ignoreCase = true)
+                    it.name.contains(
+                        requirement.title,
+                        ignoreCase = true
+                    )
             }
+
             val isAdded = matching.isNotEmpty()
+            val isFlight = requirement.type == "טיסות"
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -2468,7 +2515,11 @@ private fun DocumentsScreen(
                 ),
                 border = BorderStroke(
                     1.dp,
-                    if (isAdded) Color(0xFFBEE6CF) else Color(0xFFE3E9F0)
+                    if (isAdded) {
+                        Color(0xFFBEE6CF)
+                    } else {
+                        Color(0xFFE3E9F0)
+                    }
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
@@ -2479,8 +2530,12 @@ private fun DocumentsScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (isAdded) "✅" else "📄")
                         Spacer(Modifier.width(8.dp))
+
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(requirement.title, fontWeight = FontWeight.Bold)
+                            Text(
+                                requirement.title,
+                                fontWeight = FontWeight.Bold
+                            )
                             Text(
                                 requirement.description,
                                 style = MaterialTheme.typography.bodySmall,
@@ -2491,62 +2546,122 @@ private fun DocumentsScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Mint
                             )
+
+                            if (isFlight) {
+                                Text(
+                                    "אפשר להוסיף מסמך נפרד לכל נוסע",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Sky
+                                )
+                            }
                         }
 
                         FilledTonalButton(
                             onClick = {
-                                pendingRequirement = requirement
-                                launcher.launch(arrayOf("*/*"))
+                                startDocumentUpload(requirement)
                             },
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (isAdded) CardWhite else SoftMint,
+                                containerColor = if (isAdded) {
+                                    CardWhite
+                                } else {
+                                    SoftMint
+                                },
                                 contentColor = Color(0xFF2E7D56)
                             )
                         ) {
-                            Text(if (isAdded) "הוסף עוד" else "הוספה")
+                            Text(
+                                when {
+                                    isFlight && isAdded -> "נוסע נוסף"
+                                    isAdded -> "הוסף עוד"
+                                    else -> "הוספה"
+                                }
+                            )
                         }
                     }
 
-                    matching.forEach { document ->
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = CardWhite
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(9.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    document.name,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1
+                    if (matching.isNotEmpty()) {
+                        matching.forEach { document ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = CardWhite,
+                                border = BorderStroke(
+                                    1.dp,
+                                    Color(0xFFE5EAF0)
                                 )
-                                TextButton(
-                                    onClick = {
-                                        runCatching {
-                                            context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, Uri.parse(document.uri))
-                                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(9.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (isFlight) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .background(SoftBlue),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("✈️")
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        if (
+                                            isFlight &&
+                                            document.passengerName.isNotBlank()
+                                        ) {
+                                            Text(
+                                                document.passengerName,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Navy
                                             )
                                         }
-                                    }
-                                ) { Text("פתיחה") }
 
-                                IconButton(
-                                    onClick = {
-                                        onTripChange(
-                                            trip.copy(
-                                                documents = trip.documents.filterNot {
-                                                    it.id == document.id
-                                                }
-                                            )
+                                        Text(
+                                            document.name,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextSecondary,
+                                            maxLines = 1
                                         )
                                     }
-                                ) {
-                                    SmallDeleteIcon(Modifier.size(28.dp))
+
+                                    TextButton(
+                                        onClick = {
+                                            runCatching {
+                                                context.startActivity(
+                                                    Intent(
+                                                        Intent.ACTION_VIEW,
+                                                        Uri.parse(document.uri)
+                                                    ).addFlags(
+                                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    ) {
+                                        Text("פתיחה")
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            onTripChange(
+                                                trip.copy(
+                                                    documents = trip.documents
+                                                        .filterNot {
+                                                            it.id == document.id
+                                                        }
+                                                )
+                                            )
+                                        }
+                                    ) {
+                                        SmallDeleteIcon(
+                                            Modifier.size(28.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2557,23 +2672,87 @@ private fun DocumentsScreen(
 
         item {
             val generalRequirement = DocumentRequirement(
-                key = "general-${UUID.randomUUID()}",
+                key = "general-document",
                 title = "מסמך כללי",
                 type = "כללי",
                 description = "קובץ נוסף שאינו משויך להזמנה"
             )
+
             AccentButton(
                 text = "הוספת מסמך כללי",
                 emoji = "＋",
                 onClick = {
-                    pendingRequirement = generalRequirement
-                    launcher.launch(arrayOf("*/*"))
+                    startDocumentUpload(generalRequirement)
                 },
                 color = Mint,
                 modifier = Modifier.fillMaxWidth()
             )
         }
     }
+
+    if (askPassengerName) {
+        PassengerDocumentDialog(
+            onDismiss = {
+                askPassengerName = false
+                pendingRequirement = null
+                pendingPassengerName = ""
+            },
+            onConfirm = { passengerName ->
+                pendingPassengerName = passengerName
+                askPassengerName = false
+                launcher.launch(arrayOf("*/*"))
+            }
+        )
+    }
+}
+
+@Composable
+private fun PassengerDocumentDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var passengerName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("מסמך טיסה לנוסע")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "הזן את שם הנוסע לפני בחירת הקובץ.",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                OutlinedTextField(
+                    value = passengerName,
+                    onValueChange = { passengerName = it },
+                    label = { Text("שם הנוסע") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = passengerName.isNotBlank(),
+                onClick = {
+                    onConfirm(passengerName.trim())
+                }
+            ) {
+                Text("בחירת מסמך")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
 }
 
 @Composable

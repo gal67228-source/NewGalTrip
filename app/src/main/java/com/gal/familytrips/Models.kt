@@ -68,7 +68,8 @@ data class TripDocument(
     val name: String,
     val uri: String,
     val type: String = "כללי",
-    val notes: String = ""
+    val notes: String = "",
+    val passengerName: String = ""
 )
 
 @Serializable

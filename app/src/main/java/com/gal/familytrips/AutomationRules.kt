@@ -20,6 +20,7 @@ fun suggestedBudgetTemplates(trip: Trip): List<BudgetTemplate> {
     val localCurrency = destinationCurrency(trip.destination)
     val result = mutableListOf<BudgetTemplate>()
 
+    // Hotels are always relevant to the trip budget.
     trip.hotels.forEach { hotel ->
         result += BudgetTemplate(
             id = "auto-hotel-${hotel.id}",
@@ -30,48 +31,32 @@ fun suggestedBudgetTemplates(trip: Trip): List<BudgetTemplate> {
         )
     }
 
+    // Only flights and paid attractions are imported automatically.
     trip.days.sortedBy { it.date }.forEach { day ->
-        result += BudgetTemplate(
-            id = "auto-food-${day.id}",
-            title = "אוכל: ${day.title}",
-            currency = localCurrency,
-            category = "אוכל",
-            date = day.date
-        )
-        result += BudgetTemplate(
-            id = "auto-transport-${day.id}",
-            title = "תחבורה מקומית: ${day.title}",
-            currency = localCurrency,
-            category = "תחבורה",
-            date = day.date
-        )
-
         day.activities.forEach { activity ->
-            val category = paidActivityCategory(activity) ?: return@forEach
-            result += BudgetTemplate(
-                id = "auto-activity-${activity.id}",
-                title = activity.name,
-                currency = currencyFromCost(activity.cost) ?: localCurrency,
-                category = category,
-                date = day.date
-            )
+            when (budgetCategoryForActivity(activity)) {
+                "טיסות" -> {
+                    result += BudgetTemplate(
+                        id = "auto-flight-${activity.id}",
+                        title = activity.name,
+                        currency = currencyFromCost(activity.cost) ?: localCurrency,
+                        category = "טיסות",
+                        date = day.date
+                    )
+                }
+
+                "אטרקציות" -> {
+                    result += BudgetTemplate(
+                        id = "auto-attraction-${activity.id}",
+                        title = activity.name,
+                        currency = currencyFromCost(activity.cost) ?: localCurrency,
+                        category = "אטרקציות",
+                        date = day.date
+                    )
+                }
+            }
         }
     }
-
-    result += BudgetTemplate(
-        id = "auto-shopping",
-        title = "קניות",
-        currency = localCurrency,
-        category = "קניות",
-        date = trip.startDate
-    )
-    result += BudgetTemplate(
-        id = "auto-emergency",
-        title = "רזרבה והוצאות לא צפויות",
-        currency = localCurrency,
-        category = "כללי",
-        date = trip.startDate
-    )
 
     return result.distinctBy { it.id }
 }
@@ -122,24 +107,63 @@ fun suggestedDocumentRequirements(trip: Trip): List<DocumentRequirement> {
     return result.distinctBy { it.key }
 }
 
-private fun paidActivityCategory(activity: ActivityItem): String? {
-    val value = "${activity.name} ${activity.transport} ${activity.cost}".lowercase()
+private fun budgetCategoryForActivity(activity: ActivityItem): String? {
+    val value = "${activity.name} ${activity.transport} ${activity.cost} ${activity.notes}".lowercase()
 
-    if (activity.cost.isNotBlank()) {
-        return when {
-            containsAny(value, "טיסה", "flight") -> "טיסות"
-            containsAny(value, "מלון", "hotel") -> "מלונות"
-            containsAny(value, "הסעה", "מונית", "taxi", "transfer", "רכבת", "train") -> "תחבורה"
-            containsAny(value, "ארוח", "מסעד", "restaurant", "food") -> "אוכל"
-            else -> "אטרקציות"
-        }
+    if (containsAny(value, "טיסה", "flight", "boarding")) {
+        return "טיסות"
     }
 
-    return when {
-        containsAny(value, "טיסה", "flight") -> "טיסות"
-        containsAny(value, "שייט", "cruise", "minipolisz", "zoo", "גן החיות", "budapest eye", "גלגל ענק") -> "אטרקציות"
-        containsAny(value, "הסעה פרטית", "welcome pickups") -> "תחבורה"
-        else -> null
+    val attractionKeywords = arrayOf(
+        "שייט",
+        "cruise",
+        "minipolisz",
+        "zoo",
+        "גן החיות",
+        "budapest eye",
+        "גלגל ענק",
+        "מוזיאון",
+        "museum",
+        "פארק שעשועים",
+        "theme park",
+        "אטרקציה",
+        "attraction",
+        "כרטיס",
+        "ticket",
+        "voucher",
+        "aquaworld"
+    )
+
+    val excludedKeywords = arrayOf(
+        "ארוח",
+        "מסעד",
+        "restaurant",
+        "food",
+        "קניות",
+        "shopping",
+        "מטרו",
+        "metro",
+        "אוטובוס",
+        "bus",
+        "חשמלית",
+        "tram",
+        "תחבורה ציבורית",
+        "public transport",
+        "הליכה",
+        "walking",
+        "מונית",
+        "taxi",
+        "הסעה",
+        "transfer"
+    )
+
+    val looksLikeAttraction = attractionKeywords.any { value.contains(it) }
+    val isExcluded = excludedKeywords.any { value.contains(it) }
+
+    return if (looksLikeAttraction && !isExcluded) {
+        "אטרקציות"
+    } else {
+        null
     }
 }
 
