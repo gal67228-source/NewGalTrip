@@ -158,12 +158,12 @@ fun FlightsScreen(
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        MetaChip(
+                        FlightMetaChip(
                             "${flight.departureDate} ${flight.departureTime}",
                             SoftBlue,
                             Sky
                         )
-                        MetaChip(
+                        FlightMetaChip(
                             "${flight.arrivalDate} ${flight.arrivalTime}",
                             SoftAqua,
                             Aqua
@@ -221,6 +221,29 @@ fun FlightsScreen(
                 onTripChange(rebuildAutomaticItinerary(updated))
                 editingFlight = null
             }
+        )
+    }
+}
+
+@Composable
+private fun FlightMetaChip(
+    text: String,
+    background: Color,
+    content: Color
+) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = background
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(
+                horizontal = 10.dp,
+                vertical = 6.dp
+            ),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = content
         )
     }
 }
