@@ -29,11 +29,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -505,7 +503,7 @@ private fun DayDetailScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "חזרה")
+                Icon(Icons.Default.ArrowBack, "חזרה")
             }
             DayThumbnail(day.imageKey, Modifier.size(54.dp))
             Spacer(Modifier.width(10.dp))
@@ -612,13 +610,13 @@ private fun DayDetailScreen(
                         }
 
                         if (activity.location.isNotBlank()) {
-                            InfoLine(Icons.Default.LocationOn, activity.location)
+                            InfoLine("📍", activity.location)
                         }
                         if (activity.transport.isNotBlank()) {
-                            InfoLine(Icons.Default.DirectionsTransit, activity.transport)
+                            InfoLine("🚌", activity.transport)
                         }
                         if (activity.directions.isNotBlank()) {
-                            InfoLine(Icons.Default.Route, activity.directions)
+                            InfoLine("➡️", activity.directions)
                         }
 
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -771,13 +769,17 @@ private fun DayDetailScreen(
 }
 
 @Composable
-private fun InfoLine(icon: ImageVector, text: String) {
+private fun InfoLine(marker: String, text: String) {
     Row(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Icon(icon, null, tint = TextSecondary, modifier = Modifier.size(17.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        Text(marker, style = MaterialTheme.typography.bodySmall)
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary
+        )
     }
 }
 
