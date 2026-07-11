@@ -77,6 +77,7 @@ object DestinationResolver {
         cache[destination]?.let { return@withContext it }
 
         val query = destination
+            .substringBefore("•")
             .substringBefore(",")
             .trim()
             .ifBlank { destination.trim() }
@@ -342,6 +343,160 @@ object DestinationResolver {
         "TH" to "Asia/Bangkok",
         "AE" to "Asia/Dubai"
     )
+}
+
+
+object DayDestinationResolver {
+    private val cache = mutableMapOf<String, DestinationInfo?>()
+
+    suspend fun resolve(
+        trip: Trip,
+        day: TripDay
+    ): DestinationInfo? {
+        val cacheKey = buildString {
+            append(trip.id)
+            append("|")
+            append(day.id)
+            append("|")
+            append(day.title)
+            append("|")
+            append(day.activities.joinToString(";") { it.location })
+        }
+
+        if (cache.containsKey(cacheKey)) {
+            return cache[cacheKey]
+        }
+
+        val candidates = buildCandidates(trip, day)
+
+        for (candidate in candidates) {
+            val result = DestinationResolver.resolve(candidate)
+            if (result != null) {
+                cache[cacheKey] = result
+                return result
+            }
+        }
+
+        cache[cacheKey] = null
+        return null
+    }
+
+    private fun buildCandidates(
+        trip: Trip,
+        day: TripDay
+    ): List<String> {
+        val combinedDayText = buildString {
+            append(day.title)
+            append(" ")
+            day.activities.forEach { activity ->
+                append(activity.name)
+                append(" ")
+                append(activity.location)
+                append(" ")
+                append(activity.transport)
+                append(" ")
+            }
+        }.lowercase()
+
+        val stops = if (trip.destinationStops.isNotEmpty()) {
+            trip.destinationStops
+        } else {
+            trip.destination
+                .split("•")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+        }
+
+        val matchingStops = stops.filter { stop ->
+            val city = stop.substringBefore(",").trim().lowercase()
+            val country = stop.substringAfter(",", "").trim().lowercase()
+
+            city.isNotBlank() && combinedDayText.contains(city) ||
+                country.isNotBlank() && combinedDayText.contains(country)
+        }
+
+        val activityLocations = day.activities
+            .map { it.location.trim() }
+            .filter { location ->
+                location.isNotBlank() &&
+                    !looksLikeGenericLocation(location)
+            }
+            .distinct()
+
+        val activityNamesWithPlace = day.activities
+            .map { it.name.trim() }
+            .filter { name ->
+                name.isNotBlank() &&
+                    looksLikePlaceName(name)
+            }
+            .distinct()
+
+        return (
+            matchingStops +
+                activityLocations +
+                activityNamesWithPlace +
+                listOf(day.title) +
+                stops +
+                listOf(trip.destination)
+            )
+            .map { normalizeCandidate(it) }
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+
+    private fun normalizeCandidate(value: String): String {
+        return value
+            .replace("→", " ")
+            .replace("–", " ")
+            .replace("-", " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun looksLikeGenericLocation(value: String): Boolean {
+        val lower = value.lowercase()
+
+        val genericTerms = listOf(
+            "חדר המלון",
+            "בתוך המלון",
+            "לובי",
+            "מרכז העיר",
+            "אזור המלון",
+            "ללא נסיעה",
+            "hotel room",
+            "city center",
+            "lobby"
+        )
+
+        return genericTerms.any { lower == it || lower.contains(it) }
+    }
+
+    private fun looksLikePlaceName(value: String): Boolean {
+        val lower = value.lowercase()
+
+        val placeTerms = listOf(
+            "airport",
+            "שדה התעופה",
+            "zoo",
+            "גן החיות",
+            "museum",
+            "מוזיאון",
+            "island",
+            "אי ",
+            "park",
+            "פארק",
+            "mall",
+            "קניון",
+            "hotel",
+            "מלון",
+            "square",
+            "כיכר",
+            "station",
+            "תחנה"
+        )
+
+        return placeTerms.any { lower.contains(it) }
+    }
 }
 
 object ExchangeRateService {

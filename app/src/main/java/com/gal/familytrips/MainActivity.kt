@@ -3,6 +3,7 @@ package com.gal.familytrips
 
 import android.Manifest
 import android.app.Activity
+import android.app.DatePickerDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
@@ -39,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
@@ -111,6 +114,12 @@ fun GalTripsApp(
     var showAddTrip by remember { mutableStateOf(false) }
     val trip = state.trips.firstOrNull { it.id == state.currentTripId } ?: state.trips.first()
 
+    LaunchedEffect(state.currentTripId) {
+        selectedDayId = null
+        tab = 0
+        showAddTrip = false
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar(
@@ -150,51 +159,524 @@ fun GalTripsApp(
             }
         }
     ) { padding ->
-        when (tab) {
-            0 -> TripsScreen(state, onStateChange, onShareTrip, onImportTrip, Modifier.padding(padding))
-            1 -> if (selectedDayId == null)
-                DaysScreen(trip, onStateChange = { updated -> onStateChange(state.replaceTrip(updated)) },
-                    onSelectDay = { selectedDayId = it }, modifier = Modifier.padding(padding))
-            else
-                DayDetailScreen(
+        key(trip.id, tab) {
+            when (tab) {
+                0 -> TripsScreen(
+                    state,
+                    onStateChange,
+                    onShareTrip,
+                    onImportTrip,
+                    Modifier.padding(padding)
+                )
+
+                1 -> if (selectedDayId == null) {
+                    DaysScreen(
+                        trip,
+                        onStateChange = { updated ->
+                            onStateChange(state.replaceTrip(updated))
+                        },
+                        onSelectDay = { selectedDayId = it },
+                        modifier = Modifier.padding(padding)
+                    )
+                } else {
+                    DayDetailScreen(
+                        trip = trip,
+                        dayId = selectedDayId!!,
+                        onBack = { selectedDayId = null },
+                        onTripChange = {
+                            onStateChange(state.replaceTrip(it))
+                        },
+                        onOpenUrl = onOpenUrl,
+                        modifier = Modifier.padding(padding)
+                    )
+                }
+
+                2 -> HotelsScreen(
+                    trip,
+                    { onStateChange(state.replaceTrip(it)) },
+                    onOpenUrl,
+                    Modifier.padding(padding)
+                )
+
+                3 -> RestaurantsScreen(
+                    trip,
+                    { onStateChange(state.replaceTrip(it)) },
+                    onOpenUrl,
+                    Modifier.padding(padding)
+                )
+
+                4 -> ExpensesScreen(
+                    trip,
+                    { onStateChange(state.replaceTrip(it)) },
+                    Modifier.padding(padding)
+                )
+
+                5 -> DocumentsScreen(
+                    trip,
+                    { onStateChange(state.replaceTrip(it)) },
+                    Modifier.padding(padding)
+                )
+
+                6 -> GeneralInfoScreen(
                     trip = trip,
-                    dayId = selectedDayId!!,
-                    onBack = { selectedDayId = null },
-                    onTripChange = { onStateChange(state.replaceTrip(it)) },
-                    onOpenUrl = onOpenUrl,
+                    onTripChange = {
+                        onStateChange(state.replaceTrip(it))
+                    },
                     modifier = Modifier.padding(padding)
                 )
-            2 -> HotelsScreen(trip, { onStateChange(state.replaceTrip(it)) }, onOpenUrl, Modifier.padding(padding))
-            3 -> RestaurantsScreen(trip, { onStateChange(state.replaceTrip(it)) }, onOpenUrl, Modifier.padding(padding))
-            4 -> ExpensesScreen(trip, { onStateChange(state.replaceTrip(it)) }, Modifier.padding(padding))
-            5 -> DocumentsScreen(trip, { onStateChange(state.replaceTrip(it)) }, Modifier.padding(padding))
-            6 -> GeneralInfoScreen(
-                trip = trip,
-                onTripChange = { onStateChange(state.replaceTrip(it)) },
-                modifier = Modifier.padding(padding)
-            )
-            7 -> PackingScreen(
-                trip = trip,
-                onTripChange = { onStateChange(state.replaceTrip(it)) },
-                modifier = Modifier.padding(padding)
-            )
+
+                7 -> PackingScreen(
+                    trip = trip,
+                    onTripChange = {
+                        onStateChange(state.replaceTrip(it))
+                    },
+                    modifier = Modifier.padding(padding)
+                )
+            }
         }
     }
 
     if (showAddTrip) {
-        SimpleTextDialog(
-            title = "טיול חדש",
-            fields = listOf("שם הטיול","יעד","תאריך התחלה","תאריך סיום"),
+        NewTripDialog(
             onDismiss = { showAddTrip = false },
-            onConfirm = { values ->
+            onConfirm = { name, destinations, startDate, endDate ->
                 val newTrip = Trip(
-                    UUID.randomUUID().toString(),
-                    values[0], values[1], values[2], values[3]
+                    id = UUID.randomUUID().toString(),
+                    name = name,
+                    destination = destinations.joinToString(" • "),
+                    destinationStops = destinations,
+                    startDate = startDate,
+                    endDate = endDate,
+                    days = emptyList(),
+                    hotels = emptyList(),
+                    restaurants = emptyList(),
+                    expenses = emptyList(),
+                    documents = emptyList(),
+                    packingItems = emptyList(),
+                    packingCategories = listOf(
+                        "מסמכים",
+                        "כסף",
+                        "אלקטרוניקה",
+                        "בגדים",
+                        "רחצה",
+                        "בריאות",
+                        "ילדים",
+                        "טיול יומי",
+                        "כללי"
+                    ),
+                    offlineMode = false
                 )
-                onStateChange(state.copy(trips = state.trips + newTrip, currentTripId = newTrip.id))
+
+                onStateChange(
+                    state.copy(
+                        trips = state.trips + newTrip,
+                        currentTripId = newTrip.id
+                    )
+                )
                 showAddTrip = false
             }
         )
+    }
+}
+
+private data class DestinationOption(
+    val city: String,
+    val country: String
+) {
+    val displayName: String
+        get() = "$city, $country"
+}
+
+private val majorDestinations = listOf(
+    DestinationOption("בודפשט", "הונגריה"),
+    DestinationOption("וינה", "אוסטריה"),
+    DestinationOption("פראג", "צ'כיה"),
+    DestinationOption("ברלין", "גרמניה"),
+    DestinationOption("מינכן", "גרמניה"),
+    DestinationOption("פריז", "צרפת"),
+    DestinationOption("לונדון", "בריטניה"),
+    DestinationOption("אמסטרדם", "הולנד"),
+    DestinationOption("בריסל", "בלגיה"),
+    DestinationOption("רומא", "איטליה"),
+    DestinationOption("מילאנו", "איטליה"),
+    DestinationOption("ונציה", "איטליה"),
+    DestinationOption("ברצלונה", "ספרד"),
+    DestinationOption("מדריד", "ספרד"),
+    DestinationOption("ליסבון", "פורטוגל"),
+    DestinationOption("אתונה", "יוון"),
+    DestinationOption("לרנקה", "קפריסין"),
+    DestinationOption("בוקרשט", "רומניה"),
+    DestinationOption("ורשה", "פולין"),
+    DestinationOption("קרקוב", "פולין"),
+    DestinationOption("ציריך", "שווייץ"),
+    DestinationOption("ניו יורק", "ארצות הברית"),
+    DestinationOption("לוס אנג'לס", "ארצות הברית"),
+    DestinationOption("מיאמי", "ארצות הברית"),
+    DestinationOption("אורלנדו", "ארצות הברית"),
+    DestinationOption("לאס וגאס", "ארצות הברית"),
+    DestinationOption("טורונטו", "קנדה"),
+    DestinationOption("דובאי", "איחוד האמירויות"),
+    DestinationOption("בנגקוק", "תאילנד"),
+    DestinationOption("טוקיו", "יפן")
+)
+
+@Composable
+private fun NewTripDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (
+        name: String,
+        destinations: List<String>,
+        startDate: String,
+        endDate: String
+    ) -> Unit
+) {
+    var tripName by remember { mutableStateOf("") }
+    var startDate by remember { mutableStateOf("") }
+    var endDate by remember { mutableStateOf("") }
+    var multiDestination by remember { mutableStateOf(false) }
+    var destinationMenuOpen by remember { mutableStateOf(false) }
+    var customDestination by remember { mutableStateOf("") }
+
+    val selectedDestinations = remember {
+        mutableStateListOf<String>()
+    }
+
+    val validDates = startDate.isNotBlank() &&
+        endDate.isNotBlank() &&
+        runCatching {
+            !LocalDate.parse(endDate).isBefore(LocalDate.parse(startDate))
+        }.getOrDefault(false)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("טיול חדש") },
+        text = {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    OutlinedTextField(
+                        value = tripName,
+                        onValueChange = { tripName = it },
+                        label = { Text("שם הטיול") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "טיול רב־יעדי",
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "אפשר לבחור כמה ערים או מדינות",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+
+                        Switch(
+                            checked = multiDestination,
+                            onCheckedChange = { checked ->
+                                multiDestination = checked
+                                if (!checked && selectedDestinations.size > 1) {
+                                    val first = selectedDestinations.first()
+                                    selectedDestinations.clear()
+                                    selectedDestinations.add(first)
+                                }
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { destinationMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                if (selectedDestinations.isEmpty()) {
+                                    "בחירת עיר או מדינה"
+                                } else if (multiDestination) {
+                                    "הוספת יעד נוסף"
+                                } else {
+                                    "החלפת יעד"
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("⌄")
+                        }
+
+                        DropdownMenu(
+                            expanded = destinationMenuOpen,
+                            onDismissRequest = {
+                                destinationMenuOpen = false
+                            }
+                        ) {
+                            majorDestinations.forEach { option ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(option.displayName)
+                                    },
+                                    onClick = {
+                                        if (multiDestination) {
+                                            if (
+                                                option.displayName !in
+                                                selectedDestinations
+                                            ) {
+                                                selectedDestinations.add(
+                                                    option.displayName
+                                                )
+                                            }
+                                        } else {
+                                            selectedDestinations.clear()
+                                            selectedDestinations.add(
+                                                option.displayName
+                                            )
+                                        }
+                                        destinationMenuOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = customDestination,
+                            onValueChange = { customDestination = it },
+                            label = {
+                                Text("עיר/מדינה אחרת")
+                            },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+
+                        FilledTonalButton(
+                            enabled = customDestination.isNotBlank(),
+                            onClick = {
+                                val value = customDestination.trim()
+                                if (multiDestination) {
+                                    if (value !in selectedDestinations) {
+                                        selectedDestinations.add(value)
+                                    }
+                                } else {
+                                    selectedDestinations.clear()
+                                    selectedDestinations.add(value)
+                                }
+                                customDestination = ""
+                            }
+                        ) {
+                            Text("הוספה")
+                        }
+                    }
+                }
+
+                if (selectedDestinations.isNotEmpty()) {
+                    item {
+                        Text(
+                            "יעדים שנבחרו",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    items(
+                        selectedDestinations,
+                        key = { it }
+                    ) { destination ->
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = SoftBlue,
+                            border = BorderStroke(
+                                1.dp,
+                                Color(0xFFD6E6F8)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = 10.dp,
+                                        vertical = 7.dp
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "📍 $destination",
+                                    modifier = Modifier.weight(1f),
+                                    color = Navy
+                                )
+
+                                IconButton(
+                                    onClick = {
+                                        selectedDestinations.remove(
+                                            destination
+                                        )
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    SmallDeleteIcon(
+                                        Modifier.size(25.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    TripDatePickerField(
+                        label = "תאריך התחלה",
+                        value = startDate,
+                        onValueChange = { selected ->
+                            startDate = selected
+                            if (
+                                endDate.isNotBlank() &&
+                                runCatching {
+                                    LocalDate.parse(endDate).isBefore(
+                                        LocalDate.parse(selected)
+                                    )
+                                }.getOrDefault(false)
+                            ) {
+                                endDate = selected
+                            }
+                        }
+                    )
+                }
+
+                item {
+                    TripDatePickerField(
+                        label = "תאריך סיום",
+                        value = endDate,
+                        minimumDate = startDate,
+                        onValueChange = {
+                            endDate = it
+                        }
+                    )
+                }
+
+                if (
+                    startDate.isNotBlank() &&
+                    endDate.isNotBlank() &&
+                    !validDates
+                ) {
+                    item {
+                        Text(
+                            "תאריך הסיום חייב להיות אחרי תאריך ההתחלה",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = tripName.isNotBlank() &&
+                    selectedDestinations.isNotEmpty() &&
+                    validDates,
+                onClick = {
+                    onConfirm(
+                        tripName.trim(),
+                        selectedDestinations.toList(),
+                        startDate,
+                        endDate
+                    )
+                }
+            ) {
+                Text("יצירת טיול")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
+}
+
+@Composable
+private fun TripDatePickerField(
+    label: String,
+    value: String,
+    minimumDate: String = "",
+    onValueChange: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val initialDate = runCatching {
+        LocalDate.parse(value)
+    }.getOrElse {
+        LocalDate.now()
+    }
+
+    OutlinedButton(
+        onClick = {
+            val dialog = DatePickerDialog(
+                context,
+                { _, year, month, day ->
+                    val selected = LocalDate.of(
+                        year,
+                        month + 1,
+                        day
+                    )
+                    onValueChange(selected.toString())
+                },
+                initialDate.year,
+                initialDate.monthValue - 1,
+                initialDate.dayOfMonth
+            )
+
+            if (minimumDate.isNotBlank()) {
+                runCatching {
+                    val minimum = LocalDate.parse(minimumDate)
+                    dialog.datePicker.minDate = minimum
+                        .atStartOfDay(
+                            java.time.ZoneId.systemDefault()
+                        )
+                        .toInstant()
+                        .toEpochMilli()
+                }
+            }
+
+            dialog.show()
+        },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Text("📅")
+        Spacer(Modifier.width(8.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
+            Text(
+                if (value.isBlank()) {
+                    "בחירת תאריך"
+                } else {
+                    value
+                },
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+        }
     }
 }
 

@@ -87,6 +87,7 @@ data class Trip(
     val id: String,
     val name: String,
     val destination: String,
+    val destinationStops: List<String> = emptyList(),
     val startDate: String,
     val endDate: String,
     val days: List<TripDay> = emptyList(),

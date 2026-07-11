@@ -43,7 +43,9 @@ data class DayWeather(
     val description: String,
     val min: Int,
     val max: Int,
-    val rainChance: Int?
+    val rainChance: Int?,
+    val locationName: String,
+    val timezone: String
 )
 
 object WeatherService {
@@ -54,7 +56,7 @@ object WeatherService {
         val daysAway = tripDate.toEpochDay() - LocalDate.now().toEpochDay()
         if (daysAway !in 0..16) return@withContext null
 
-        val destination = DestinationResolver.resolve(trip.destination)
+        val destination = DayDestinationResolver.resolve(trip, day)
             ?: return@withContext null
 
         val lat = destination.latitude
@@ -88,7 +90,15 @@ object WeatherService {
                 description = description,
                 min = response.daily.minTemp.getOrNull(index)?.toInt() ?: 0,
                 max = response.daily.maxTemp.getOrNull(index)?.toInt() ?: 0,
-                rainChance = response.daily.rainChance.getOrNull(index)
+                rainChance = response.daily.rainChance.getOrNull(index),
+                locationName = listOf(
+                    destination.city,
+                    destination.country
+                )
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .joinToString(", "),
+                timezone = destination.timezone
             )
         } finally {
             connection.disconnect()
@@ -183,7 +193,26 @@ private fun ClockCard(flag: String, city: String, time: String, modifier: Modifi
 
 @Composable
 fun WeatherCard(trip: Trip, day: TripDay, modifier: Modifier = Modifier) {
-    val weather by produceState<DayWeather?>(initialValue = null, day.date, trip.offlineMode) {
+    val routeKey = remember(day.activities, day.title, trip.destinationStops) {
+        buildString {
+            append(day.title)
+            append("|")
+            append(trip.destinationStops.joinToString(";"))
+            append("|")
+            append(
+                day.activities.joinToString(";") {
+                    "${it.name}:${it.location}"
+                }
+            )
+        }
+    }
+
+    val weather by produceState<DayWeather?>(
+        initialValue = null,
+        day.date,
+        trip.offlineMode,
+        routeKey
+    ) {
         value = if (trip.offlineMode) {
             null
         } else {
@@ -209,12 +238,22 @@ fun WeatherCard(trip: Trip, day: TripDay, modifier: Modifier = Modifier) {
                 Text(weather!!.emoji)
                 Column {
                     Text(
+                        weather!!.locationName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Sky,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
                         "${weather!!.min}°–${weather!!.max}° · ${weather!!.description}",
                         fontWeight = FontWeight.Bold,
                         color = Navy
                     )
                     weather!!.rainChance?.let {
-                        Text("סיכוי לגשם: $it%", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        Text(
+                            "סיכוי לגשם: $it%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
                     }
                 }
             } else {
