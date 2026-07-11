@@ -34,6 +34,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.semantics
@@ -1364,6 +1365,7 @@ private fun EditDayDialog(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DayDetailScreen(
     trip: Trip,
@@ -1379,6 +1381,48 @@ private fun DayDetailScreen(
     var editingActivity by remember { mutableStateOf<ActivityItem?>(null) }
     var movingActivity by remember { mutableStateOf<ActivityItem?>(null) }
     var showLiveMap by remember { mutableStateOf(false) }
+
+    val orderedActivities = remember(day.id) {
+        mutableStateListOf<ActivityItem>().apply {
+            addAll(day.activities)
+        }
+    }
+    var draggingActivityId by remember(day.id) {
+        mutableStateOf<String?>(null)
+    }
+    var dragOffsetY by remember(day.id) {
+        mutableStateOf(0f)
+    }
+
+    LaunchedEffect(day.activities, draggingActivityId) {
+        if (draggingActivityId == null) {
+            val incomingIds = day.activities.map { it.id }
+            val localIds = orderedActivities.map { it.id }
+            if (incomingIds != localIds || day.activities != orderedActivities.toList()) {
+                orderedActivities.clear()
+                orderedActivities.addAll(day.activities)
+            }
+        }
+    }
+
+    fun saveReorderedActivities() {
+        val recalculated = recalculateActivityTimes(
+            orderedActivities.toList()
+        )
+        orderedActivities.clear()
+        orderedActivities.addAll(recalculated)
+
+        val updatedDay = day.copy(
+            activities = recalculated
+        )
+        onTripChange(
+            trip.copy(
+                days = trip.days.map {
+                    if (it.id == day.id) updatedDay else it
+                }
+            )
+        )
+    }
 
     Column(
         modifier = modifier
@@ -1433,7 +1477,7 @@ private fun DayDetailScreen(
                 text = "מפה יומית",
                 emoji = "🗺️",
                 onClick = {
-                    val points = day.activities
+                    val points = orderedActivities
                         .mapNotNull {
                             it.location.ifBlank { it.name }
                                 .takeIf(String::isNotBlank)
@@ -1472,9 +1516,27 @@ private fun DayDetailScreen(
             verticalArrangement = Arrangement.spacedBy(9.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            items(day.activities, key = { it.id }) { activity ->
+            items(
+                items = orderedActivities,
+                key = { it.id }
+            ) { activity ->
+                val isDragging = draggingActivityId == activity.id
+                val animatedElevationOffset by animateFloatAsState(
+                    targetValue = if (isDragging) 1f else 0f,
+                    label = "dragElevation"
+                )
+
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItemPlacement()
+                        .graphicsLayer {
+                            translationY = if (isDragging) dragOffsetY else 0f
+                            scaleX = 1f + animatedElevationOffset * 0.015f
+                            scaleY = 1f + animatedElevationOffset * 0.015f
+                            shadowElevation = animatedElevationOffset * 18f
+                            alpha = if (isDragging) 0.96f else 1f
+                        },
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (activity.completed) SoftMint else CardWhite
@@ -1492,32 +1554,59 @@ private fun DayDetailScreen(
                         ) {
                             ActivityDragHandle(
                                 activityId = activity.id,
-                                activities = day.activities,
-                                onMove = { fromIndex, toIndex ->
-                                    if (
-                                        fromIndex in day.activities.indices &&
-                                        toIndex in day.activities.indices &&
-                                        fromIndex != toIndex
-                                    ) {
-                                        val reordered = day.activities.toMutableList()
-                                        val moved = reordered.removeAt(fromIndex)
-                                        reordered.add(toIndex, moved)
-
-                                        val updatedDay = day.copy(
-                                            activities = reordered
-                                        )
-                                        onTripChange(
-                                            trip.copy(
-                                                days = trip.days.map {
-                                                    if (it.id == day.id) {
-                                                        updatedDay
-                                                    } else {
-                                                        it
-                                                    }
-                                                }
-                                            )
-                                        )
+                                isDragging = isDragging,
+                                onDragStart = {
+                                    draggingActivityId = activity.id
+                                    dragOffsetY = 0f
+                                },
+                                onDrag = { deltaY ->
+                                    if (draggingActivityId != activity.id) {
+                                        return@ActivityDragHandle
                                     }
+
+                                    dragOffsetY += deltaY
+
+                                    val currentIndex = orderedActivities
+                                        .indexOfFirst { it.id == activity.id }
+
+                                    if (currentIndex < 0) {
+                                        return@ActivityDragHandle
+                                    }
+
+                                    val itemStepPx = 92f
+
+                                    while (
+                                        dragOffsetY > itemStepPx &&
+                                        currentIndex < orderedActivities.lastIndex
+                                    ) {
+                                        val liveIndex = orderedActivities
+                                            .indexOfFirst { it.id == activity.id }
+                                        if (liveIndex >= orderedActivities.lastIndex) break
+
+                                        val moved = orderedActivities.removeAt(liveIndex)
+                                        orderedActivities.add(liveIndex + 1, moved)
+                                        dragOffsetY -= itemStepPx
+                                    }
+
+                                    while (
+                                        dragOffsetY < -itemStepPx &&
+                                        orderedActivities.indexOfFirst {
+                                            it.id == activity.id
+                                        } > 0
+                                    ) {
+                                        val liveIndex = orderedActivities
+                                            .indexOfFirst { it.id == activity.id }
+                                        if (liveIndex <= 0) break
+
+                                        val moved = orderedActivities.removeAt(liveIndex)
+                                        orderedActivities.add(liveIndex - 1, moved)
+                                        dragOffsetY += itemStepPx
+                                    }
+                                },
+                                onDragEnd = {
+                                    draggingActivityId = null
+                                    dragOffsetY = 0f
+                                    saveReorderedActivities()
                                 }
                             )
 
@@ -1732,7 +1821,9 @@ private fun DayDetailScreen(
 
     if (showLiveMap) {
         LiveMapDialog(
-            day = day,
+            day = day.copy(
+                activities = orderedActivities.toList()
+            ),
             onDismiss = { showLiveMap = false },
             onOpenUrl = onOpenUrl,
             onCompleteActivity = { activityId ->
@@ -1852,61 +1943,68 @@ private fun DayDetailScreen(
 @Composable
 private fun ActivityDragHandle(
     activityId: String,
-    activities: List<ActivityItem>,
-    onMove: (fromIndex: Int, toIndex: Int) -> Unit
+    isDragging: Boolean,
+    onDragStart: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit
 ) {
-    var dragDistance by remember(activityId) {
-        mutableStateOf(0f)
-    }
+    val background by animateColorAsState(
+        targetValue = if (isDragging) Sky else SoftBlue,
+        label = "dragHandleBackground"
+    )
+    val foreground by animateColorAsState(
+        targetValue = if (isDragging) Color.White else Sky,
+        label = "dragHandleForeground"
+    )
 
     Box(
         modifier = Modifier
-            .size(width = 32.dp, height = 48.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(SoftBlue)
-            .pointerInput(activityId, activities.map { it.id }) {
+            .width(36.dp)
+            .height(64.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(background)
+            .pointerInput(activityId) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = {
-                        dragDistance = 0f
+                        onDragStart()
                     },
                     onDragEnd = {
-                        dragDistance = 0f
+                        onDragEnd()
                     },
                     onDragCancel = {
-                        dragDistance = 0f
+                        onDragEnd()
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        dragDistance += dragAmount.y
-
-                        val currentIndex = activities.indexOfFirst {
-                            it.id == activityId
-                        }
-
-                        if (
-                            dragDistance > 55f &&
-                            currentIndex in 0 until activities.lastIndex
-                        ) {
-                            onMove(currentIndex, currentIndex + 1)
-                            dragDistance = 0f
-                        } else if (
-                            dragDistance < -55f &&
-                            currentIndex > 0
-                        ) {
-                            onMove(currentIndex, currentIndex - 1)
-                            dragDistance = 0f
-                        }
+                        onDrag(dragAmount.y)
                     }
                 )
             },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            "☰",
-            color = Sky,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleMedium
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            repeat(3) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(3.dp)
+                            .clip(CircleShape)
+                            .background(foreground)
+                    )
+                    Box(
+                        Modifier
+                            .size(3.dp)
+                            .clip(CircleShape)
+                            .background(foreground)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -2824,27 +2922,90 @@ private fun activityTimeMinutes(value: String): Int? {
 }
 
 private fun nextSuggestedTime(day: TripDay): String {
-    val lastTime = day.activities
-        .mapNotNull { activity ->
-            Regex("""(\d{1,2}):(\d{2})""")
-                .find(activity.time)
-                ?.let { match ->
-                    val hour = match.groupValues[1].toIntOrNull()
-                    val minute = match.groupValues[2].toIntOrNull()
-                    if (hour != null && minute != null) {
-                        hour * 60 + minute
-                    } else {
-                        null
-                    }
-                }
-        }
-        .maxOrNull()
-        ?: return "09:00"
+    val recalculated = recalculateActivityTimes(day.activities)
+    val last = recalculated.lastOrNull() ?: return "09:00"
+    val start = activityTimeMinutes(last.time) ?: return "09:00"
+    val end = (start + activityDurationMinutes(last.duration))
+        .coerceAtMost(23 * 60 + 59)
+    return minutesToClock(end)
+}
 
-    val suggested = (lastTime + 60).coerceAtMost(23 * 60 + 59)
+private fun recalculateActivityTimes(
+    activities: List<ActivityItem>
+): List<ActivityItem> {
+    if (activities.isEmpty()) return emptyList()
+
+    val firstStart = activityTimeMinutes(activities.first().time)
+        ?: 9 * 60
+
+    var currentStart = firstStart
+
+    return activities.mapIndexed { index, activity ->
+        val updated = activity.copy(
+            time = minutesToClock(currentStart)
+        )
+
+        val duration = activityDurationMinutes(activity.duration)
+        currentStart = (currentStart + duration)
+            .coerceAtMost(23 * 60 + 59)
+
+        updated
+    }
+}
+
+private fun activityDurationMinutes(value: String): Int {
+    val normalized = value
+        .trim()
+        .lowercase()
+        .replace("כשעה", "שעה")
+        .replace("כ-", "")
+        .replace("כ", "")
+
+    Regex("""(\d+)\s*שעות?""")
+        .find(normalized)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+        ?.let { hours ->
+            val extraMinutes = Regex("""(\d+)\s*דקות?""")
+                .find(normalized)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.toIntOrNull()
+                ?: 0
+            return hours * 60 + extraMinutes
+        }
+
+    Regex("""(\d+)\s*דקות?""")
+        .find(normalized)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+        ?.let { return it.coerceAtLeast(5) }
+
+    Regex("""(\d+(?:\.\d+)?)\s*hours?""")
+        .find(normalized)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toDoubleOrNull()
+        ?.let { return (it * 60).toInt().coerceAtLeast(5) }
+
+    if ("שעה וחצי" in normalized) return 90
+    if ("חצי שעה" in normalized) return 30
+    if ("שעה" in normalized) return 60
+    if ("שעתיים" in normalized) return 120
+    if ("שלוש שעות" in normalized) return 180
+    if ("45" in normalized) return 45
+    if ("30" in normalized) return 30
+
+    return 60
+}
+
+private fun minutesToClock(totalMinutes: Int): String {
+    val safe = totalMinutes.coerceIn(0, 23 * 60 + 59)
     return "%02d:%02d".format(
-        suggested / 60,
-        suggested % 60
+        safe / 60,
+        safe % 60
     )
 }
 
