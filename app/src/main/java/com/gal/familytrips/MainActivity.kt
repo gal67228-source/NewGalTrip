@@ -1,184 +1,510 @@
+
 package com.gal.familytrips
 
+import android.Manifest
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
+    private lateinit var store: TripStore
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        store = TripStore(this)
+
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    GalFamilyTripsApp()
+                var state by remember { mutableStateOf<AppState?>(null) }
+
+                LaunchedEffect(Unit) {
+                    state = store.load()
+                }
+
+                state?.let { loaded ->
+                    GalTripsApp(
+                        state = loaded,
+                        onStateChange = {
+                            state = it
+                            lifecycleScope.launch { store.save(it) }
+                        },
+                        onOpenUrl = ::openUrl,
+                        onShareTrip = { shareText(store.exportTrip(it)) },
+                        onImportTrip = { raw ->
+                            runCatching { store.importTrip(raw) }.onSuccess { trip ->
+                                val imported = trip.copy(id = UUID.randomUUID().toString(), name = trip.name + " (מיובא)")
+                                val next = loaded.copy(
+                                    trips = loaded.trips + imported,
+                                    currentTripId = imported.id
+                                )
+                                state = next
+                                lifecycleScope.launch { store.save(next) }
+                            }
+                        }
+                    )
+                } ?: Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                    CircularProgressIndicator()
                 }
             }
         }
     }
+
+    private fun openUrl(url: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
+    }
+
+    private fun shareText(text: String) {
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }, "שיתוף טיול"))
+    }
 }
 
-data class TripDay(
-    val date: String,
-    val title: String,
-    val activities: List<String>
-)
-
-private val budapestDays = listOf(
-    TripDay("05.08", "טיסה והגעה ל-Aquaworld", listOf("טיסה W6 2506", "צ'ק-אין", "בריכה וארוחת ערב")),
-    TripDay("06.08", "פארק מים וקניות", listOf("פארק המים", "מנוחה", "Auchan Dunakeszi")),
-    TripDay("07.08", "יום מלא במלון", listOf("ג'ימבורי", "פארק מים", "פעילויות ילדים")),
-    TripDay("08.08", "מעבר למרכז העיר", listOf("הסעה ב-10:00", "MiniPolisz", "Budapest Eye", "רחוב ואצי")),
-    TripDay("09.08", "גן החיות ושייט", listOf("Budapest Zoo", "Városliget", "שייט ב-20:20")),
-    TripDay("10.08", "Arena Mall ואי מרגיט", listOf("Arena Mall", "חזרה למלון", "Margaret Island")),
-    TripDay("11.08", "טיסה חזרה", listOf("הסעה ב-09:40", "טיסה W6 2327"))
-)
-
 @Composable
-fun GalFamilyTripsApp() {
-    var selectedTab by remember { mutableIntStateOf(0) }
+fun GalTripsApp(
+    state: AppState,
+    onStateChange: (AppState) -> Unit,
+    onOpenUrl: (String) -> Unit,
+    onShareTrip: (Trip) -> Unit,
+    onImportTrip: (String) -> Unit
+) {
+    var tab by remember { mutableIntStateOf(0) }
+    var selectedDayId by remember { mutableStateOf<String?>(null) }
+    var showAddTrip by remember { mutableStateOf(false) }
+    val trip = state.trips.firstOrNull { it.id == state.currentTripId } ?: state.trips.first()
 
     Scaffold(
         bottomBar = {
-            NavigationBar(modifier = Modifier.navigationBarsPadding()) {
-                NavigationBarItem(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    icon = { Text("🏠") },
-                    label = { Text("ראשי") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    icon = { Text("📅") },
-                    label = { Text("ימים") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = { Text("⚙️") },
-                    label = { Text("בדיקה") }
-                )
+            NavigationBar {
+                listOf(
+                    Triple(Icons.Default.Home, "טיולים", 0),
+                    Triple(Icons.Default.Today, "ימים", 1),
+                    Triple(Icons.Default.Hotel, "מלונות", 2),
+                    Triple(Icons.Default.Restaurant, "מסעדות", 3),
+                    Triple(Icons.Default.AttachMoney, "תקציב", 4),
+                    Triple(Icons.Default.Description, "מסמכים", 5)
+                ).forEach { (icon,label,index) ->
+                    NavigationBarItem(
+                        selected = tab == index,
+                        onClick = { tab = index },
+                        icon = { Icon(icon, null) },
+                        label = { Text(label) }
+                    )
+                }
+            }
+        },
+        floatingActionButton = {
+            if (tab == 0) FloatingActionButton(onClick = { showAddTrip = true }) {
+                Icon(Icons.Default.Add, null)
             }
         }
-    ) { innerPadding ->
-        when (selectedTab) {
-            0 -> HomeScreen(Modifier.padding(innerPadding))
-            1 -> DaysScreen(Modifier.padding(innerPadding))
-            else -> DiagnosticsScreen(Modifier.padding(innerPadding))
+    ) { padding ->
+        when (tab) {
+            0 -> TripsScreen(state, onStateChange, onShareTrip, onImportTrip, Modifier.padding(padding))
+            1 -> if (selectedDayId == null)
+                DaysScreen(trip, onStateChange = { updated -> onStateChange(state.replaceTrip(updated)) },
+                    onSelectDay = { selectedDayId = it }, modifier = Modifier.padding(padding))
+            else
+                DayDetailScreen(
+                    trip = trip,
+                    dayId = selectedDayId!!,
+                    onBack = { selectedDayId = null },
+                    onTripChange = { onStateChange(state.replaceTrip(it)) },
+                    onOpenUrl = onOpenUrl,
+                    modifier = Modifier.padding(padding)
+                )
+            2 -> HotelsScreen(trip, { onStateChange(state.replaceTrip(it)) }, onOpenUrl, Modifier.padding(padding))
+            3 -> RestaurantsScreen(trip, { onStateChange(state.replaceTrip(it)) }, onOpenUrl, Modifier.padding(padding))
+            4 -> ExpensesScreen(trip, { onStateChange(state.replaceTrip(it)) }, Modifier.padding(padding))
+            5 -> DocumentsScreen(trip, { onStateChange(state.replaceTrip(it)) }, Modifier.padding(padding))
         }
     }
-}
 
-@Composable
-private fun HomeScreen(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Text(
-            text = "Gal Family Trips",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
+    if (showAddTrip) {
+        SimpleTextDialog(
+            title = "טיול חדש",
+            fields = listOf("שם הטיול","יעד","תאריך התחלה","תאריך סיום"),
+            onDismiss = { showAddTrip = false },
+            onConfirm = { values ->
+                val newTrip = Trip(
+                    UUID.randomUUID().toString(),
+                    values[0], values[1], values[2], values[3]
+                )
+                onStateChange(state.copy(trips = state.trips + newTrip, currentTripId = newTrip.id))
+                showAddTrip = false
+            }
         )
-        Text("בודפשט 2026 · 5–11 באוגוסט")
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(18.dp)) {
-                Text("האפליקציה נפתחה בהצלחה", fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                Text("זוהי גרסת בסיס נקייה ללא התראות, AI או נתונים ישנים.")
-            }
-        }
-        Button(onClick = {}, modifier = Modifier.fillMaxWidth()) {
-            Text("המשך פיתוח לאחר בדיקת היציבות")
-        }
     }
 }
 
-@Composable
-private fun DaysScreen(modifier: Modifier = Modifier) {
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Text(
-                text = "ימי הטיול",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = 16.dp)
-            )
-        }
+private fun AppState.replaceTrip(updated: Trip): AppState =
+    copy(trips = trips.map { if (it.id == updated.id) updated else it })
 
-        items(budapestDays) { day ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(day.date, fontWeight = FontWeight.Bold)
-                        Text(day.title)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    day.activities.forEach { activity ->
-                        Text("• $activity")
+@Composable
+private fun TripsScreen(
+    state: AppState,
+    onStateChange: (AppState) -> Unit,
+    onShareTrip: (Trip) -> Unit,
+    onImportTrip: (String) -> Unit,
+    modifier: Modifier
+) {
+    var importText by remember { mutableStateOf<String?>(null) }
+    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { Text("הטיולים שלי", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+        items(state.trips) { trip ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(trip.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("${trip.destination} · ${trip.startDate}–${trip.endDate}")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onStateChange(state.copy(currentTripId = trip.id)) }) { Text("בחירה") }
+                        OutlinedButton(onClick = { onShareTrip(trip) }) { Text("שיתוף") }
+                        if (state.trips.size > 1) {
+                            IconButton(onClick = {
+                                val nextTrips = state.trips.filterNot { it.id == trip.id }
+                                onStateChange(state.copy(trips = nextTrips, currentTripId = nextTrips.first().id))
+                            }) { Icon(Icons.Default.Delete, null) }
+                        }
                     }
                 }
             }
         }
-
-        item { Spacer(Modifier.height(20.dp)) }
+        item {
+            OutlinedButton(onClick = { importText = "" }, modifier = Modifier.fillMaxWidth()) {
+                Text("ייבוא טיול מטקסט JSON")
+            }
+        }
+    }
+    if (importText != null) {
+        TextAreaDialog("ייבוא טיול", importText!!, { importText = null }) {
+            onImportTrip(it); importText = null
+        }
     }
 }
 
 @Composable
-private fun DiagnosticsScreen(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "בדיקת מערכת",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-        Text("✓ Jetpack Compose")
-        Text("✓ AndroidX")
-        Text("✓ ללא הרשאת התראות")
-        Text("✓ ללא WebView")
-        Text("✓ Repository נקי")
+private fun DaysScreen(trip: Trip, onStateChange: (Trip) -> Unit, onSelectDay: (String) -> Unit, modifier: Modifier) {
+    var addDay by remember { mutableStateOf(false) }
+    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("ימי הטיול", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                IconButton(onClick = { addDay = true }) { Icon(Icons.Default.Add, null) }
+            }
+        }
+        items(trip.days.sortedBy { it.date }) { day ->
+            Card(onClick = { onSelectDay(day.id) }, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(day.date, fontWeight = FontWeight.Bold)
+                    Text(day.title)
+                    Text("${day.activities.size} פעילויות", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
+    if (addDay) {
+        SimpleTextDialog("יום חדש", listOf("תאריך YYYY-MM-DD","כותרת"),
+            { addDay = false }) { v ->
+            onStateChange(trip.copy(days = trip.days + TripDay(UUID.randomUUID().toString(),v[0],v[1])))
+            addDay = false
+        }
+    }
+}
+
+@Composable
+private fun DayDetailScreen(
+    trip: Trip,
+    dayId: String,
+    onBack: () -> Unit,
+    onTripChange: (Trip) -> Unit,
+    onOpenUrl: (String) -> Unit,
+    modifier: Modifier
+) {
+    val day = trip.days.first { it.id == dayId }
+    var addActivity by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxSize().padding(16.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) }
+            Text(day.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            IconButton(onClick = { addActivity = true }) { Icon(Icons.Default.Add, null) }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                val points = day.activities.mapNotNull { it.location.ifBlank { null } }
+                if (points.isNotEmpty()) {
+                    val origin = points.first()
+                    val destination = points.last()
+                    val waypoints = points.drop(1).dropLast(1).take(8).joinToString("|")
+                    var url = "https://www.google.com/maps/dir/?api=1&origin=${Uri.encode(origin)}&destination=${Uri.encode(destination)}&travelmode=transit"
+                    if (waypoints.isNotBlank()) url += "&waypoints=${Uri.encode(waypoints)}"
+                    onOpenUrl(url)
+                }
+            }) { Text("מפה יומית מלאה") }
+            OutlinedButton(onClick = {
+                day.activities.firstOrNull { !it.completed }?.let {
+                    onOpenUrl("https://www.google.com/maps/search/?api=1&query=${Uri.encode(it.location.ifBlank { it.name })}")
+                }
+            }) { Text("מסלול חי") }
+        }
+
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+            items(day.activities.sortedBy { it.time }) { activity ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column(Modifier.weight(1f)) {
+                                Text(activity.time, fontWeight = FontWeight.Bold)
+                                Text(activity.name, style = MaterialTheme.typography.titleMedium)
+                                if (activity.location.isNotBlank()) Text(activity.location, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Checkbox(activity.completed, onCheckedChange = { checked ->
+                                val updatedDay = day.copy(activities = day.activities.map {
+                                    if (it.id == activity.id) it.copy(completed = checked) else it
+                                })
+                                onTripChange(trip.copy(days = trip.days.map { if (it.id == day.id) updatedDay else it }))
+                            })
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(onClick = {
+                                onOpenUrl(activity.mapsUrl.ifBlank {
+                                    "https://www.google.com/maps/search/?api=1&query=${Uri.encode(activity.location.ifBlank { activity.name })}"
+                                })
+                            }) { Text("Maps") }
+                            TextButton(onClick = {
+                                onOpenUrl("https://waze.com/ul?q=${Uri.encode(activity.location.ifBlank { activity.name })}&navigate=yes")
+                            }) { Text("Waze") }
+                            TextButton(onClick = {
+                                val filtered = trip.restaurants.filter {
+                                    it.activityId == activity.id || (it.activityId == null && it.dayId == day.id)
+                                }
+                                val query = if (filtered.isNotEmpty()) filtered.first().name else "restaurants near ${activity.location}"
+                                onOpenUrl("https://www.google.com/maps/search/?api=1&query=${Uri.encode(query)}")
+                            }) { Text("מסעדות") }
+                            IconButton(onClick = {
+                                val updatedDay = day.copy(activities = day.activities.filterNot { it.id == activity.id })
+                                onTripChange(trip.copy(days = trip.days.map { if (it.id == day.id) updatedDay else it }))
+                            }) { Icon(Icons.Default.Delete, null) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (addActivity) {
+        SimpleTextDialog("פעילות חדשה", listOf("שעה","שם","מיקום","הערות"),
+            { addActivity = false }) { v ->
+            val activity = ActivityItem(
+                UUID.randomUUID().toString(), v[0], v[1], v[2], v[3],
+                "https://www.google.com/maps/search/?api=1&query=${Uri.encode(v[2].ifBlank { v[1] })}"
+            )
+            val updatedDay = day.copy(activities = day.activities + activity)
+            onTripChange(trip.copy(days = trip.days.map { if (it.id == day.id) updatedDay else it }))
+            addActivity = false
+        }
+    }
+}
+
+@Composable
+private fun HotelsScreen(trip: Trip, onTripChange: (Trip) -> Unit, onOpenUrl: (String) -> Unit, modifier: Modifier) {
+    var add by remember { mutableStateOf(false) }
+    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("מלונות", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                IconButton(onClick = { add = true }) { Icon(Icons.Default.Add, null) }
+            }
+        }
+        items(trip.hotels) { h ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(h.name, fontWeight = FontWeight.Bold)
+                    Text("${h.checkIn}–${h.checkOut}")
+                    Text(h.address)
+                    Row {
+                        TextButton(onClick = { onOpenUrl(h.mapsUrl.ifBlank { "https://www.google.com/maps/search/?api=1&query=${Uri.encode(h.address)}" }) }) { Text("Maps") }
+                        IconButton(onClick = { onTripChange(trip.copy(hotels = trip.hotels.filterNot { it.id == h.id })) }) { Icon(Icons.Default.Delete, null) }
+                    }
+                }
+            }
+        }
+    }
+    if (add) {
+        SimpleTextDialog("מלון חדש", listOf("שם","צ'ק-אין","צ'ק-אאוט","כתובת"),
+            { add = false }) { v ->
+            onTripChange(trip.copy(hotels = trip.hotels + Hotel(UUID.randomUUID().toString(),v[0],v[1],v[2],v[3],
+                "https://www.google.com/maps/search/?api=1&query=${Uri.encode(v[3].ifBlank { v[0] })}")))
+            add = false
+        }
+    }
+}
+
+@Composable
+private fun RestaurantsScreen(trip: Trip, onTripChange: (Trip) -> Unit, onOpenUrl: (String) -> Unit, modifier: Modifier) {
+    var add by remember { mutableStateOf(false) }
+    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("מסעדות", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                IconButton(onClick = { add = true }) { Icon(Icons.Default.Add, null) }
+            }
+        }
+        items(trip.restaurants) { r ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(r.name, fontWeight = FontWeight.Bold)
+                    Text("${r.area} · ${r.type} · ${r.price}")
+                    if (r.notes.isNotBlank()) Text(r.notes)
+                    Row {
+                        TextButton(onClick = { onOpenUrl(r.mapsUrl.ifBlank { "https://www.google.com/maps/search/?api=1&query=${Uri.encode(r.name)}" }) }) { Text("Maps") }
+                        IconButton(onClick = { onTripChange(trip.copy(restaurants = trip.restaurants.filterNot { it.id == r.id })) }) { Icon(Icons.Default.Delete, null) }
+                    }
+                }
+            }
+        }
+    }
+    if (add) {
+        SimpleTextDialog("מסעדה חדשה", listOf("שם","אזור","סוג","מחיר","הערה"),
+            { add = false }) { v ->
+            onTripChange(trip.copy(restaurants = trip.restaurants + Restaurant(UUID.randomUUID().toString(),name=v[0],area=v[1],type=v[2],price=v[3],notes=v[4],
+                mapsUrl="https://www.google.com/maps/search/?api=1&query=${Uri.encode(v[0] + " " + v[1])}")))
+            add = false
+        }
+    }
+}
+
+@Composable
+private fun ExpensesScreen(trip: Trip, onTripChange: (Trip) -> Unit, modifier: Modifier) {
+    var add by remember { mutableStateOf(false) }
+    val sums = trip.expenses.groupBy { it.currency }.mapValues { e -> e.value.sumOf { it.amount } }
+    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("תקציב", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                IconButton(onClick = { add = true }) { Icon(Icons.Default.Add, null) }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("HUF","EUR","ILS").forEach { c ->
+                    AssistChip(onClick = {}, label = { Text("$c ${sums[c] ?: 0.0}") })
+                }
+            }
+        }
+        items(trip.expenses) { e ->
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column { Text(e.title, fontWeight = FontWeight.Bold); Text("${e.category} · ${e.date}") }
+                    Row { Text("${e.amount} ${e.currency}"); IconButton(onClick = {
+                        onTripChange(trip.copy(expenses = trip.expenses.filterNot { it.id == e.id }))
+                    }) { Icon(Icons.Default.Delete, null) } }
+                }
+            }
+        }
+    }
+    if (add) {
+        SimpleTextDialog("הוצאה חדשה", listOf("תיאור","סכום","מטבע HUF/EUR/ILS","קטגוריה","תאריך"),
+            { add = false }) { v ->
+            onTripChange(trip.copy(expenses = trip.expenses + Expense(UUID.randomUUID().toString(),v[0],v[1].toDoubleOrNull() ?: 0.0,v[2],v[3],v[4])))
+            add = false
+        }
+    }
+}
+
+@Composable
+private fun DocumentsScreen(trip: Trip, onTripChange: (Trip) -> Unit, modifier: Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let {
+            runCatching { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val doc = TripDocument(UUID.randomUUID().toString(), it.lastPathSegment ?: "מסמך", it.toString())
+            onTripChange(trip.copy(documents = trip.documents + doc))
+        }
+    }
+
+    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("מסמכים", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                IconButton(onClick = { launcher.launch(arrayOf("*/*")) }) { Icon(Icons.Default.Add, null) }
+            }
+        }
+        items(trip.documents) { d ->
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column { Text(d.name, fontWeight = FontWeight.Bold); Text(d.type) }
+                    Row {
+                        TextButton(onClick = {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(d.uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                            }
+                        }) { Text("פתיחה") }
+                        IconButton(onClick = { onTripChange(trip.copy(documents = trip.documents.filterNot { it.id == d.id })) }) { Icon(Icons.Default.Delete, null) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimpleTextDialog(
+    title: String,
+    fields: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<String>) -> Unit
+) {
+    val values = remember { fields.map { mutableStateOf("") } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                fields.forEachIndexed { i, label ->
+                    OutlinedTextField(values[i].value, { values[i].value = it }, label = { Text(label) })
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(values.map { it.value }) }) { Text("שמירה") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ביטול") } }
+    )
+}
+
+@Composable
+private fun TextAreaDialog(title: String, initial: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { OutlinedTextField(text, { text = it }, modifier = Modifier.fillMaxWidth().height(250.dp)) },
+        confirmButton = { TextButton(onClick = { onConfirm(text) }) { Text("ייבוא") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ביטול") } }
+    )
 }
