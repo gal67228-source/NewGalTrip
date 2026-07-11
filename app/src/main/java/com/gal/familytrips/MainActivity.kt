@@ -177,7 +177,13 @@ private fun TripsScreen(
     modifier: Modifier
 ) {
     var importText by remember { mutableStateOf<String?>(null) }
-    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         item {
             GradientHeader(
                 title = "הטיולים שלי",
@@ -187,33 +193,90 @@ private fun TripsScreen(
                 end = Navy
             )
         }
-        items(state.trips) { trip ->
+
+        items(state.trips, key = { it.id }) { trip ->
             SectionCard(containerColor = SoftLavender) {
-                    Text(trip.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("${trip.destination} · ${trip.startDate}–${trip.endDate}")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onStateChange(state.copy(currentTripId = trip.id)) }) { Text("בחירה") }
-                        OutlinedButton(onClick = { onShareTrip(trip) }) { Text("שיתוף") }
-                        if (state.trips.size > 1) {
-                            IconButton(onClick = {
-                                val nextTrips = state.trips.filterNot { it.id == trip.id }
-                                onStateChange(state.copy(trips = nextTrips, currentTripId = nextTrips.first().id))
-                            }) { Icon(Icons.Default.Delete, null) }
+                Text(
+                    text = trip.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = trip.destination,
+                    color = TextSecondary
+                )
+                Text(
+                    text = "${trip.startDate}–${trip.endDate}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AccentButton(
+                        text = if (state.currentTripId == trip.id) "נבחר" else "בחירה",
+                        emoji = if (state.currentTripId == trip.id) "✓" else "✈️",
+                        onClick = { onStateChange(state.copy(currentTripId = trip.id)) },
+                        color = if (state.currentTripId == trip.id) Mint else Sky,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    SoftActionButton(
+                        text = "שיתוף",
+                        emoji = "📤",
+                        onClick = { onShareTrip(trip) },
+                        container = SoftBlue,
+                        contentColor = Sky,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (state.trips.size > 1) {
+                    TextButton(
+                        onClick = {
+                            val remaining = state.trips.filterNot { it.id == trip.id }
+                            onStateChange(
+                                state.copy(
+                                    trips = remaining,
+                                    currentTripId = remaining.first().id
+                                )
+                            )
                         }
+                    ) {
+                        Text("🗑️ מחיקת הטיול", color = Coral)
                     }
                 }
             }
         }
+
         item {
-            OutlinedButton(onClick = { importText = "" }, modifier = Modifier.fillMaxWidth()) {
-                Text("ייבוא טיול מטקסט JSON")
-            }
+            SoftActionButton(
+                text = "ייבוא טיול מטקסט JSON",
+                emoji = "📥",
+                onClick = { importText = "" },
+                container = SoftAqua,
+                contentColor = Aqua,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(20.dp))
         }
     }
+
     if (importText != null) {
-        TextAreaDialog("ייבוא טיול", importText!!, { importText = null }) {
-            onImportTrip(it); importText = null
-        }
+        TextAreaDialog(
+            title = "ייבוא טיול",
+            initial = importText!!,
+            onDismiss = { importText = null },
+            onConfirm = {
+                onImportTrip(it)
+                importText = null
+            }
+        )
     }
 }
 
