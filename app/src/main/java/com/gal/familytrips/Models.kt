@@ -9,6 +9,10 @@ data class ActivityItem(
     val time: String = "",
     val name: String,
     val location: String = "",
+    val transport: String = "",
+    val directions: String = "",
+    val duration: String = "",
+    val cost: String = "",
     val notes: String = "",
     val mapsUrl: String = "",
     val completed: Boolean = false
@@ -19,6 +23,7 @@ data class TripDay(
     val id: String,
     val date: String,
     val title: String,
+    val imageKey: String = "city",
     val activities: List<ActivityItem> = emptyList()
 )
 
