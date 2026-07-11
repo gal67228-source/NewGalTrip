@@ -37,6 +37,22 @@ data class TripDay(
 )
 
 @Serializable
+data class Flight(
+    val id: String,
+    val flightNumber: String = "",
+    val departureDate: String,
+    val departureTime: String,
+    val arrivalDate: String,
+    val arrivalTime: String,
+    val departureAirport: String,
+    val arrivalAirport: String,
+    val transferFrom: String = "",
+    val transferMinutes: Int = 45,
+    val baggageMinutes: Int = 60,
+    val notes: String = ""
+)
+
+@Serializable
 data class Hotel(
     val id: String,
     val name: String,
@@ -44,7 +60,8 @@ data class Hotel(
     val checkOut: String,
     val address: String = "",
     val mapsUrl: String = "",
-    val notes: String = ""
+    val notes: String = "",
+    val boardBasis: String = "לינה בלבד"
 )
 
 @Serializable
@@ -107,7 +124,8 @@ data class Trip(
     val packingItems: List<PackingItem> = emptyList(),
     val packingCategories: List<String> = emptyList(),
     val offlineMode: Boolean = false,
-    val destinationStays: List<DestinationStay> = emptyList()
+    val destinationStays: List<DestinationStay> = emptyList(),
+    val flights: List<Flight> = emptyList()
 )
 
 @Serializable

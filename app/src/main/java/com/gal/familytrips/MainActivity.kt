@@ -133,13 +133,14 @@ fun GalTripsApp(
             ) {
                 listOf(
                     Triple(Icons.Default.Home, "טיולים", 0),
-                    Triple(Icons.Default.Today, "ימים", 1),
+                    Triple(Icons.Default.Flight, "טיסות", 1),
                     Triple(Icons.Default.Hotel, "מלונות", 2),
-                    Triple(Icons.Default.Restaurant, "מסעדות", 3),
-                    Triple(Icons.Default.AttachMoney, "תקציב", 4),
-                    Triple(Icons.Default.Description, "מסמכים", 5),
-                    Triple(Icons.Default.Info, "מידע", 6),
-                    Triple(Icons.Default.Luggage, "ציוד", 7)
+                    Triple(Icons.Default.Today, "ימים", 3),
+                    Triple(Icons.Default.Restaurant, "מסעדות", 4),
+                    Triple(Icons.Default.AttachMoney, "תקציב", 5),
+                    Triple(Icons.Default.Description, "מסמכים", 6),
+                    Triple(Icons.Default.Info, "מידע", 7),
+                    Triple(Icons.Default.Luggage, "ציוד", 8)
                 ).forEach { (icon,label,index) ->
                     NavigationBarItem(
                         selected = tab == index,
@@ -173,7 +174,22 @@ fun GalTripsApp(
                     Modifier.padding(padding)
                 )
 
-                1 -> if (selectedDayId == null) {
+                1 -> FlightsScreen(
+                    trip = trip,
+                    onTripChange = {
+                        onStateChange(state.replaceTrip(it))
+                    },
+                    modifier = Modifier.padding(padding)
+                )
+
+                2 -> HotelsScreen(
+                    trip,
+                    { onStateChange(state.replaceTrip(it)) },
+                    onOpenUrl,
+                    Modifier.padding(padding)
+                )
+
+                3 -> if (selectedDayId == null) {
                     DaysScreen(
                         trip,
                         onStateChange = { updated ->
@@ -195,33 +211,26 @@ fun GalTripsApp(
                     )
                 }
 
-                2 -> HotelsScreen(
+                4 -> RestaurantsScreen(
                     trip,
                     { onStateChange(state.replaceTrip(it)) },
                     onOpenUrl,
                     Modifier.padding(padding)
                 )
 
-                3 -> RestaurantsScreen(
-                    trip,
-                    { onStateChange(state.replaceTrip(it)) },
-                    onOpenUrl,
-                    Modifier.padding(padding)
-                )
-
-                4 -> ExpensesScreen(
+                5 -> ExpensesScreen(
                     trip,
                     { onStateChange(state.replaceTrip(it)) },
                     Modifier.padding(padding)
                 )
 
-                5 -> DocumentsScreen(
+                6 -> DocumentsScreen(
                     trip,
                     { onStateChange(state.replaceTrip(it)) },
                     Modifier.padding(padding)
                 )
 
-                6 -> GeneralInfoScreen(
+                7 -> GeneralInfoScreen(
                     trip = trip,
                     onTripChange = {
                         onStateChange(state.replaceTrip(it))
@@ -229,7 +238,7 @@ fun GalTripsApp(
                     modifier = Modifier.padding(padding)
                 )
 
-                7 -> PackingScreen(
+                8 -> PackingScreen(
                     trip = trip,
                     onTripChange = {
                         onStateChange(state.replaceTrip(it))
@@ -479,7 +488,7 @@ private fun NewTripDialog(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "כל יעד יוצר אוטומטית את ימי המסלול שלו",
+                        "יום הסיום של יעד הוא גם יום ההגעה ליעד הבא",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary
                     )
@@ -638,9 +647,7 @@ private fun NewTripDialog(
 
                 if (stays.isNotEmpty() && scheduleError == null) {
                     item {
-                        val dayCount = stays.sumOf {
-                            inclusiveDayCount(it.startDate, it.endDate)
-                        }
+                        val dayCount = uniqueTripDayCount(stays)
 
                         Surface(
                             shape = RoundedCornerShape(14.dp),
@@ -774,7 +781,7 @@ private fun suggestedNextStartDate(
         }
         .maxOrNull()
 
-    return (latestEnd?.plusDays(1) ?: LocalDate.now()).toString()
+    return (latestEnd ?: LocalDate.now()).toString()
 }
 
 private fun validateDestinationStays(
@@ -803,16 +810,43 @@ private fun validateDestinationStays(
     }.sortedBy { it.second }
 
     parsed.zipWithNext().forEach { (first, second) ->
-        if (!second.second.isAfter(first.third)) {
-            return "טווחי היעדים חופפים. כל יום יכול להיות משויך ליעד אחד בלבד."
-        }
-
-        if (second.second.isAfter(first.third.plusDays(1))) {
-            return "יש פער בין ${first.first.destination} ל-${second.first.destination}. יש לשמור רצף תאריכים מלא."
+        if (second.second != first.third) {
+            return buildString {
+                append("יום הסיום של ")
+                append(first.first.destination)
+                append(" חייב להיות גם יום ההגעה ל-")
+                append(second.first.destination)
+                append(". יש לבחור לשני היעדים את אותו תאריך מעבר.")
+            }
         }
     }
 
     return null
+}
+
+private fun uniqueTripDayCount(
+    stays: List<DestinationStay>
+): Int {
+    return stays
+        .flatMap { stay ->
+            val start = runCatching {
+                LocalDate.parse(stay.startDate)
+            }.getOrNull() ?: return@flatMap emptyList()
+
+            val end = runCatching {
+                LocalDate.parse(stay.endDate)
+            }.getOrNull() ?: return@flatMap emptyList()
+
+            buildList {
+                var date = start
+                while (!date.isAfter(end)) {
+                    add(date.toString())
+                    date = date.plusDays(1)
+                }
+            }
+        }
+        .distinct()
+        .size
 }
 
 private fun inclusiveDayCount(
@@ -836,7 +870,7 @@ private fun buildDaysFromDestinationStays(
     existingDays: List<TripDay>
 ): List<TripDay> {
     val existingByDate = existingDays.associateBy { it.date }
-    val result = mutableListOf<TripDay>()
+    val destinationsByDate = linkedMapOf<String, MutableList<String>>()
 
     stays.sortedBy { it.startDate }.forEach { stay ->
         val start = LocalDate.parse(stay.startDate)
@@ -845,33 +879,56 @@ private fun buildDaysFromDestinationStays(
 
         while (!date.isAfter(end)) {
             val dateText = date.toString()
-            val existing = existingByDate[dateText]
-            val city = stay.destination.substringBefore(",").trim()
+            val destinations = destinationsByDate
+                .getOrPut(dateText) { mutableListOf() }
 
-            result += if (existing != null) {
-                existing.copy(
-                    date = dateText,
-                    destination = stay.destination,
-                    title = existing.title.ifBlank {
-                        "יום ב$city"
-                    }
-                )
-            } else {
-                TripDay(
-                    id = UUID.randomUUID().toString(),
-                    date = dateText,
-                    title = "יום ב$city",
-                    imageKey = destinationImageKey(stay.destination),
-                    activities = emptyList(),
-                    destination = stay.destination
-                )
+            if (stay.destination !in destinations) {
+                destinations.add(stay.destination)
             }
 
             date = date.plusDays(1)
         }
     }
 
-    return result.sortedBy { it.date }
+    return destinationsByDate.map { (dateText, destinations) ->
+        val existing = existingByDate[dateText]
+        val displayDestination = destinations.joinToString(" → ")
+        val cityNames = destinations.map {
+            it.substringBefore(",").trim()
+        }
+
+        val defaultTitle = if (destinations.size > 1) {
+            "מעבר מ-${cityNames.first()} ל-${cityNames.last()}"
+        } else {
+            "יום ב-${cityNames.first()}"
+        }
+
+        if (existing != null) {
+            existing.copy(
+                date = dateText,
+                destination = displayDestination,
+                title = when {
+                    existing.title.isBlank() -> defaultTitle
+                    existing.destination != displayDestination &&
+                        existing.title.startsWith("יום ב") -> defaultTitle
+                    else -> existing.title
+                }
+            )
+        } else {
+            TripDay(
+                id = UUID.randomUUID().toString(),
+                date = dateText,
+                title = defaultTitle,
+                imageKey = if (destinations.size > 1) {
+                    "flight"
+                } else {
+                    destinationImageKey(destinations.first())
+                },
+                activities = emptyList(),
+                destination = displayDestination
+            )
+        }
+    }.sortedBy { it.date }
 }
 
 private fun destinationImageKey(destination: String): String {
@@ -2682,29 +2739,42 @@ private fun HotelsScreen(
     onOpenUrl: (String) -> Unit,
     modifier: Modifier
 ) {
-    var add by remember { mutableStateOf(false) }
+    var addHotel by remember { mutableStateOf(false) }
+    var editingHotel by remember { mutableStateOf<Hotel?>(null) }
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 24.dp)
+        contentPadding = PaddingValues(bottom = 28.dp)
     ) {
         item {
             GradientHeader(
                 title = "מלונות",
-                subtitle = "מקומות הלינה ותאריכי השהייה",
+                subtitle = "בסיס האירוח יוצר אוטומטית ארוחות במסלול",
                 emoji = "🏨",
                 start = Aqua,
                 end = Navy
             )
-            DynamicClockBar(trip)
-            Spacer(Modifier.height(10.dp))
+
+            SectionCard(containerColor = SoftAqua) {
+                Text(
+                    "שעות הארוחות הקבועות",
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+                Text(
+                    "בוקר 08:00 · צהריים 13:00 · ערב 19:00",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+
             AccentButton(
                 text = "הוספת מלון",
                 emoji = "＋",
-                onClick = { add = true },
+                onClick = { addHotel = true },
                 color = Aqua,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -2715,7 +2785,7 @@ private fun HotelsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(22.dp),
                 colors = CardDefaults.cardColors(containerColor = CardWhite),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDEEF1)),
+                border = BorderStroke(1.dp, Color(0xFFDDEEF1)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
                 Column(
@@ -2725,23 +2795,80 @@ private fun HotelsScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         DayThumbnail("hotel", Modifier.size(58.dp))
                         Spacer(Modifier.width(12.dp))
+
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 hotel.name,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
-                            Text(hotel.address, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                hotel.address,
+                                color = TextSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { editingHotel = hotel },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            SmallEditIcon(Modifier.size(28.dp))
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val updated = trip.copy(
+                                    hotels = trip.hotels.filterNot {
+                                        it.id == hotel.id
+                                    }
+                                )
+                                onTripChange(
+                                    rebuildAutomaticItinerary(updated)
+                                )
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            SmallDeleteIcon(Modifier.size(28.dp))
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MetaChip("כניסה ${hotel.checkIn}", SoftAqua, Color(0xFF087C8A))
-                        MetaChip("יציאה ${hotel.checkOut}", SoftBlue, Sky)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetaChip(
+                            "כניסה ${hotel.checkIn}",
+                            SoftAqua,
+                            Color(0xFF087C8A)
+                        )
+                        MetaChip(
+                            "יציאה ${hotel.checkOut}",
+                            SoftBlue,
+                            Sky
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = boardBasisColor(hotel.boardBasis)
+                    ) {
+                        Text(
+                            "🍽️ ${hotel.boardBasis}",
+                            modifier = Modifier.padding(
+                                horizontal = 11.dp,
+                                vertical = 7.dp
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
                     }
 
                     if (hotel.notes.isNotBlank()) {
-                        Text(hotel.notes, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        Text(
+                            hotel.notes,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
                     }
 
                     HorizontalDivider(color = Color(0xFFE8EDF3))
@@ -2752,7 +2879,11 @@ private fun HotelsScreen(
                                 onOpenUrl(
                                     hotel.mapsUrl.ifBlank {
                                         "https://www.google.com/maps/search/?api=1&query=" +
-                                            Uri.encode(hotel.address.ifBlank { hotel.name })
+                                            Uri.encode(
+                                                hotel.address.ifBlank {
+                                                    hotel.name
+                                                }
+                                            )
                                     }
                                 )
                             }
@@ -2764,24 +2895,16 @@ private fun HotelsScreen(
                             onClick = {
                                 onOpenUrl(
                                     "https://waze.com/ul?q=" +
-                                        Uri.encode(hotel.address.ifBlank { hotel.name }) +
+                                        Uri.encode(
+                                            hotel.address.ifBlank {
+                                                hotel.name
+                                            }
+                                        ) +
                                         "&navigate=yes"
                                 )
                             }
                         ) {
                             WazeBrandIcon(Modifier.size(32.dp))
-                        }
-
-                        Spacer(Modifier.weight(1f))
-
-                        IconButton(
-                            onClick = {
-                                onTripChange(
-                                    trip.copy(hotels = trip.hotels.filterNot { it.id == hotel.id })
-                                )
-                            }
-                        ) {
-                            SmallDeleteIcon(Modifier.size(30.dp))
                         }
                     }
                 }
@@ -2789,30 +2912,240 @@ private fun HotelsScreen(
         }
     }
 
-    if (add) {
-        SimpleTextDialog(
-            title = "מלון חדש",
-            fields = listOf("שם", "צ'ק-אין", "צ'ק-אאוט", "כתובת"),
-            onDismiss = { add = false },
-            onConfirm = { values ->
-                onTripChange(
-                    trip.copy(
-                        hotels = trip.hotels + Hotel(
-                            id = UUID.randomUUID().toString(),
-                            name = values[0],
-                            checkIn = values[1],
-                            checkOut = values[2],
-                            address = values[3],
-                            mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
-                                Uri.encode(values[3].ifBlank { values[0] })
-                        )
-                    )
+    if (addHotel) {
+        HotelSkeletonEditorDialog(
+            trip = trip,
+            hotel = null,
+            onDismiss = { addHotel = false },
+            onConfirm = { hotel ->
+                val updated = trip.copy(
+                    hotels = trip.hotels + hotel
                 )
-                add = false
+                onTripChange(rebuildAutomaticItinerary(updated))
+                addHotel = false
+            }
+        )
+    }
+
+    editingHotel?.let { hotel ->
+        HotelSkeletonEditorDialog(
+            trip = trip,
+            hotel = hotel,
+            onDismiss = { editingHotel = null },
+            onConfirm = { updatedHotel ->
+                val updated = trip.copy(
+                    hotels = trip.hotels.map {
+                        if (it.id == updatedHotel.id) {
+                            updatedHotel
+                        } else {
+                            it
+                        }
+                    }
+                )
+                onTripChange(rebuildAutomaticItinerary(updated))
+                editingHotel = null
             }
         )
     }
 }
+
+@Composable
+private fun HotelSkeletonEditorDialog(
+    trip: Trip,
+    hotel: Hotel?,
+    onDismiss: () -> Unit,
+    onConfirm: (Hotel) -> Unit
+) {
+    var name by remember(hotel?.id) {
+        mutableStateOf(hotel?.name.orEmpty())
+    }
+    var checkIn by remember(hotel?.id) {
+        mutableStateOf(hotel?.checkIn ?: trip.startDate)
+    }
+    var checkOut by remember(hotel?.id) {
+        mutableStateOf(hotel?.checkOut ?: trip.endDate)
+    }
+    var address by remember(hotel?.id) {
+        mutableStateOf(hotel?.address.orEmpty())
+    }
+    var boardBasis by remember(hotel?.id) {
+        mutableStateOf(hotel?.boardBasis ?: "לינה בלבד")
+    }
+    var boardMenuOpen by remember { mutableStateOf(false) }
+    var notes by remember(hotel?.id) {
+        mutableStateOf(hotel?.notes.orEmpty())
+    }
+
+    val bases = listOf(
+        "לינה בלבד",
+        "ארוחת בוקר",
+        "חצי פנסיון",
+        "פנסיון מלא"
+    )
+
+    val valid = name.isNotBlank() &&
+        runCatching {
+            !LocalDate.parse(checkOut)
+                .isBefore(LocalDate.parse(checkIn))
+        }.getOrDefault(false)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (hotel == null) "מלון חדש" else "עריכת מלון"
+            )
+        },
+        text = {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                item {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("שם המלון") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    TripDatePickerField(
+                        label = "צ׳ק־אין",
+                        value = checkIn,
+                        onValueChange = {
+                            checkIn = it
+                            if (
+                                runCatching {
+                                    LocalDate.parse(checkOut)
+                                        .isBefore(LocalDate.parse(it))
+                                }.getOrDefault(false)
+                            ) {
+                                checkOut = it
+                            }
+                        }
+                    )
+                }
+
+                item {
+                    TripDatePickerField(
+                        label = "צ׳ק־אאוט",
+                        value = checkOut,
+                        minimumDate = checkIn,
+                        onValueChange = { checkOut = it }
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { address = it },
+                        label = { Text("כתובת") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { boardMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "בסיס אירוח: $boardBasis",
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("⌄")
+                        }
+
+                        DropdownMenu(
+                            expanded = boardMenuOpen,
+                            onDismissRequest = {
+                                boardMenuOpen = false
+                            }
+                        ) {
+                            bases.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option) },
+                                    onClick = {
+                                        boardBasis = option
+                                        boardMenuOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("הערות") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    SectionCard(containerColor = SoftAqua) {
+                        Text(
+                            mealPlanDescription(boardBasis),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    onConfirm(
+                        Hotel(
+                            id = hotel?.id
+                                ?: UUID.randomUUID().toString(),
+                            name = name.trim(),
+                            checkIn = checkIn,
+                            checkOut = checkOut,
+                            address = address.trim(),
+                            mapsUrl = hotel?.mapsUrl.orEmpty(),
+                            notes = notes.trim(),
+                            boardBasis = boardBasis
+                        )
+                    )
+                }
+            ) {
+                Text("שמירה")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
+}
+
+private fun mealPlanDescription(boardBasis: String): String =
+    when (boardBasis) {
+        "ארוחת בוקר" ->
+            "ארוחת בוקר תתווסף ב־08:00 מהבוקר שלאחר הצ׳ק־אין ועד יום הצ׳ק־אאוט."
+        "חצי פנסיון" ->
+            "ארוחת בוקר ב־08:00 וארוחת ערב ב־19:00. ערב מתחיל ביום הצ׳ק־אין."
+        "פנסיון מלא" ->
+            "ארוחת בוקר ב־08:00, צהריים ב־13:00 וערב ב־19:00 בהתאם לימי השהייה."
+        else ->
+            "לא יתווספו ארוחות אוטומטיות למסלול."
+    }
+
+private fun boardBasisColor(boardBasis: String): Color =
+    when (boardBasis) {
+        "ארוחת בוקר" -> SoftSun
+        "חצי פנסיון" -> SoftAqua
+        "פנסיון מלא" -> SoftMint
+        else -> SoftBlue
+    }
 
 @Composable
 private fun RestaurantsScreen(

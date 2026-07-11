@@ -367,8 +367,13 @@ object DayDestinationResolver {
             return cache[cacheKey]
         }
 
+        val explicitDayDestinations = day.destination
+            .split("→")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
         val candidates = (
-            listOf(day.destination) +
+            explicitDayDestinations +
                 buildCandidates(trip, day)
             )
             .filter { it.isNotBlank() }
