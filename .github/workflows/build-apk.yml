@@ -60,7 +60,10 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Build APK
-        run: gradle --no-daemon --stacktrace clean assembleDebug
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace clean assembleDebug 2>&1 | tee build.log
 
       - name: Verify APK
         shell: bash
@@ -71,7 +74,16 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gal-Family-Trips-Native-Features-APK
+          name: Gal-Family-Trips-Native-Features-Fixed-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kotlin-Build-Log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
