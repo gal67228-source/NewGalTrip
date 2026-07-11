@@ -16,6 +16,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -281,42 +287,204 @@ private fun TripsScreen(
 }
 
 @Composable
-private fun DaysScreen(trip: Trip, onStateChange: (Trip) -> Unit, onSelectDay: (String) -> Unit, modifier: Modifier) {
+private fun DaysScreen(
+    trip: Trip,
+    onStateChange: (Trip) -> Unit,
+    onSelectDay: (String) -> Unit,
+    modifier: Modifier
+) {
     var addDay by remember { mutableStateOf(false) }
-    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            GradientHeader(
-                title = "ימי הטיול",
-                subtitle = "מסלול מסודר לכל יום",
-                emoji = "📅",
-                start = Sky,
-                end = Navy
-            )
-            AccentButton("הוספת יום", "＋", { addDay = true }, color = Sky, modifier = Modifier.fillMaxWidth())
-        }
-        items(trip.days.sortedBy { it.date }) { day ->
-            Card(
-                onClick = { onSelectDay(day.id) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = SoftBlue),
-                elevation = CardDefaults.cardElevation(5.dp)
-            ) {
-                Column(Modifier.padding(18.dp)) {
-                    Text(day.date, fontWeight = FontWeight.Bold)
-                    Text(day.title)
-                    Text("${day.activities.size} פעילויות", style = MaterialTheme.typography.bodySmall)
+    var editingDay by remember { mutableStateOf<TripDay?>(null) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        GradientHeader(
+            title = "ימי הטיול",
+            subtitle = "בחרו יום לצפייה במסלול",
+            emoji = "📅",
+            start = Sky,
+            end = Navy
+        )
+
+        AccentButton(
+            text = "הוספת יום",
+            emoji = "＋",
+            onClick = { addDay = true },
+            color = Sky,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            items(
+                items = trip.days.sortedBy { it.date },
+                key = { it.id }
+            ) { day ->
+                Card(
+                    onClick = { onSelectDay(day.id) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 150.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardWhite),
+                    border = BorderStroke(1.dp, Color(0xFFE2EAF3)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = day.date,
+                                color = Sky,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = day.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${day.activities.size} פעילויות",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    editingDay = day
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "עריכת יום",
+                                    tint = Sky,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    onStateChange(
+                                        trip.copy(
+                                            days = trip.days.filterNot { it.id == day.id },
+                                            restaurants = trip.restaurants.filterNot { it.dayId == day.id }
+                                        )
+                                    )
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = "מחיקת יום",
+                                    tint = Coral,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+
     if (addDay) {
-        SimpleTextDialog("יום חדש", listOf("תאריך YYYY-MM-DD","כותרת"),
-            { addDay = false }) { v ->
-            onStateChange(trip.copy(days = trip.days + TripDay(UUID.randomUUID().toString(),v[0],v[1])))
-            addDay = false
-        }
+        SimpleTextDialog(
+            title = "יום חדש",
+            fields = listOf("תאריך YYYY-MM-DD", "כותרת"),
+            onDismiss = { addDay = false },
+            onConfirm = { values ->
+                onStateChange(
+                    trip.copy(
+                        days = trip.days + TripDay(
+                            id = UUID.randomUUID().toString(),
+                            date = values[0],
+                            title = values[1]
+                        )
+                    )
+                )
+                addDay = false
+            }
+        )
     }
+
+    editingDay?.let { day ->
+        EditDayDialog(
+            day = day,
+            onDismiss = { editingDay = null },
+            onConfirm = { updated ->
+                onStateChange(
+                    trip.copy(
+                        days = trip.days.map { if (it.id == updated.id) updated else it }
+                    )
+                )
+                editingDay = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun EditDayDialog(
+    day: TripDay,
+    onDismiss: () -> Unit,
+    onConfirm: (TripDay) -> Unit
+) {
+    var date by remember(day.id) { mutableStateOf(day.date) }
+    var title by remember(day.id) { mutableStateOf(day.title) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("עריכת יום") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = date,
+                    onValueChange = { date = it },
+                    label = { Text("תאריך") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("כותרת היום") }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(day.copy(date = date, title = title)) }
+            ) {
+                Text("שמירה")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("ביטול") }
+        }
+    )
 }
 
 @Composable
@@ -330,69 +498,282 @@ private fun DayDetailScreen(
 ) {
     val day = trip.days.first { it.id == dayId }
     var addActivity by remember { mutableStateOf(false) }
-    Column(modifier.fillMaxSize().padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) }
-            Text(day.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            IconButton(onClick = { addActivity = true }) { Icon(Icons.Default.Add, null) }
+    var editingActivity by remember { mutableStateOf<ActivityItem?>(null) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "חזרה")
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = day.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = day.date,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+            }
+
+            IconButton(onClick = { addActivity = true }) {
+                Icon(
+                    Icons.Default.AddCircle,
+                    contentDescription = "הוספת פעילות",
+                    tint = Sky
+                )
+            }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SoftActionButton("מפה יומית", "🗺️", onClick = {
-                val points = day.activities.mapNotNull { it.location.ifBlank { null } }
-                if (points.isNotEmpty()) {
-                    val origin = points.first()
-                    val destination = points.last()
-                    val waypoints = points.drop(1).dropLast(1).take(8).joinToString("|")
-                    var url = "https://www.google.com/maps/dir/?api=1&origin=${Uri.encode(origin)}&destination=${Uri.encode(destination)}&travelmode=transit"
-                    if (waypoints.isNotBlank()) url += "&waypoints=${Uri.encode(waypoints)}"
-                    onOpenUrl(url)
-                }
-            }, container = SoftBlue, contentColor = Sky)
-            SoftActionButton("מסלול חי", "📍", onClick = {
-                day.activities.firstOrNull { !it.completed }?.let {
-                    onOpenUrl("https://www.google.com/maps/search/?api=1&query=${Uri.encode(it.location.ifBlank { it.name })}")
-                }
-            }, container = SoftAqua, contentColor = Aqua)
-        }
+        Spacer(Modifier.height(10.dp))
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-            items(day.activities.sortedBy { it.time }) { activity ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column(Modifier.weight(1f)) {
-                                Text(activity.time, fontWeight = FontWeight.Bold)
-                                Text(activity.name, style = MaterialTheme.typography.titleMedium)
-                                if (activity.location.isNotBlank()) Text(activity.location, style = MaterialTheme.typography.bodySmall)
-                            }
-                            Checkbox(activity.completed, onCheckedChange = { checked ->
-                                val updatedDay = day.copy(activities = day.activities.map {
-                                    if (it.id == activity.id) it.copy(completed = checked) else it
-                                })
-                                onTripChange(trip.copy(days = trip.days.map { if (it.id == day.id) updatedDay else it }))
-                            })
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SoftActionButton(
+                text = "מפה יומית",
+                emoji = "🗺️",
+                onClick = {
+                    val points = day.activities
+                        .mapNotNull { it.location.ifBlank { null } }
+
+                    if (points.isNotEmpty()) {
+                        val origin = points.first()
+                        val destination = points.last()
+                        val waypoints = points
+                            .drop(1)
+                            .dropLast(1)
+                            .take(8)
+                            .joinToString("|")
+
+                        var url =
+                            "https://www.google.com/maps/dir/?api=1" +
+                                "&origin=${Uri.encode(origin)}" +
+                                "&destination=${Uri.encode(destination)}" +
+                                "&travelmode=transit"
+
+                        if (waypoints.isNotBlank()) {
+                            url += "&waypoints=${Uri.encode(waypoints)}"
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            TextButton(onClick = {
-                                onOpenUrl(activity.mapsUrl.ifBlank {
-                                    "https://www.google.com/maps/search/?api=1&query=${Uri.encode(activity.location.ifBlank { activity.name })}"
-                                })
-                            }) { Text("Maps") }
-                            TextButton(onClick = {
-                                onOpenUrl("https://waze.com/ul?q=${Uri.encode(activity.location.ifBlank { activity.name })}&navigate=yes")
-                            }) { Text("Waze") }
-                            TextButton(onClick = {
-                                val filtered = trip.restaurants.filter {
-                                    it.activityId == activity.id || (it.activityId == null && it.dayId == day.id)
+
+                        onOpenUrl(url)
+                    }
+                },
+                container = SoftBlue,
+                contentColor = Sky,
+                modifier = Modifier.weight(1f)
+            )
+
+            SoftActionButton(
+                text = "מסלול חי",
+                emoji = "📍",
+                onClick = {
+                    day.activities.firstOrNull { !it.completed }?.let {
+                        onOpenUrl(
+                            "https://www.google.com/maps/search/?api=1&query=" +
+                                Uri.encode(it.location.ifBlank { it.name })
+                        )
+                    }
+                },
+                container = SoftAqua,
+                contentColor = Aqua,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            items(
+                items = day.activities.sortedBy { it.time },
+                key = { it.id }
+            ) { activity ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (activity.completed) SoftMint else CardWhite
+                    ),
+                    border = BorderStroke(
+                        1.dp,
+                        if (activity.completed) Mint.copy(alpha = .45f) else Color(0xFFE2EAF3)
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(15.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = activity.time,
+                                    color = Sky,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                                Text(
+                                    text = activity.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (activity.location.isNotBlank()) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.LocationOn,
+                                            contentDescription = null,
+                                            tint = TextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = activity.location,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextSecondary,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
-                                val query = if (filtered.isNotEmpty()) filtered.first().name else "restaurants near ${activity.location}"
-                                onOpenUrl("https://www.google.com/maps/search/?api=1&query=${Uri.encode(query)}")
-                            }) { Text("מסעדות") }
-                            IconButton(onClick = {
-                                val updatedDay = day.copy(activities = day.activities.filterNot { it.id == activity.id })
-                                onTripChange(trip.copy(days = trip.days.map { if (it.id == day.id) updatedDay else it }))
-                            }) { Icon(Icons.Default.Delete, null) }
+                            }
+
+                            Checkbox(
+                                checked = activity.completed,
+                                onCheckedChange = { checked ->
+                                    val updatedDay = day.copy(
+                                        activities = day.activities.map {
+                                            if (it.id == activity.id) {
+                                                it.copy(completed = checked)
+                                            } else {
+                                                it
+                                            }
+                                        }
+                                    )
+                                    onTripChange(
+                                        trip.copy(
+                                            days = trip.days.map {
+                                                if (it.id == day.id) updatedDay else it
+                                            }
+                                        )
+                                    )
+                                }
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilledTonalButton(
+                                onClick = {
+                                    onOpenUrl(
+                                        activity.mapsUrl.ifBlank {
+                                            "https://www.google.com/maps/search/?api=1&query=" +
+                                                Uri.encode(activity.location.ifBlank { activity.name })
+                                        }
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = SoftBlue,
+                                    contentColor = Sky
+                                )
+                            ) {
+                                Icon(
+                                    Icons.Default.Map,
+                                    contentDescription = "Google Maps",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("Maps")
+                            }
+
+                            FilledTonalButton(
+                                onClick = {
+                                    onOpenUrl(
+                                        "https://waze.com/ul?q=" +
+                                            Uri.encode(activity.location.ifBlank { activity.name }) +
+                                            "&navigate=yes"
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = SoftAqua,
+                                    contentColor = Color(0xFF007A8A)
+                                )
+                            ) {
+                                Icon(
+                                    Icons.Default.DirectionsCar,
+                                    contentDescription = "Waze",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("Waze")
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            IconButton(
+                                onClick = { editingActivity = activity },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "עריכת פעילות",
+                                    tint = Sky,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    val updatedDay = day.copy(
+                                        activities = day.activities.filterNot {
+                                            it.id == activity.id
+                                        }
+                                    )
+                                    onTripChange(
+                                        trip.copy(
+                                            days = trip.days.map {
+                                                if (it.id == day.id) updatedDay else it
+                                            }
+                                        )
+                                    )
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.DeleteOutline,
+                                    contentDescription = "מחיקת פעילות",
+                                    tint = Coral,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -401,17 +782,123 @@ private fun DayDetailScreen(
     }
 
     if (addActivity) {
-        SimpleTextDialog("פעילות חדשה", listOf("שעה","שם","מיקום","הערות"),
-            { addActivity = false }) { v ->
-            val activity = ActivityItem(
-                UUID.randomUUID().toString(), v[0], v[1], v[2], v[3],
-                "https://www.google.com/maps/search/?api=1&query=${Uri.encode(v[2].ifBlank { v[1] })}"
-            )
-            val updatedDay = day.copy(activities = day.activities + activity)
-            onTripChange(trip.copy(days = trip.days.map { if (it.id == day.id) updatedDay else it }))
-            addActivity = false
-        }
+        SimpleTextDialog(
+            title = "פעילות חדשה",
+            fields = listOf("שעה", "שם", "מיקום", "הערות"),
+            onDismiss = { addActivity = false },
+            onConfirm = { values ->
+                val activity = ActivityItem(
+                    id = UUID.randomUUID().toString(),
+                    time = values[0],
+                    name = values[1],
+                    location = values[2],
+                    notes = values[3],
+                    mapsUrl =
+                        "https://www.google.com/maps/search/?api=1&query=" +
+                            Uri.encode(values[2].ifBlank { values[1] })
+                )
+
+                val updatedDay = day.copy(
+                    activities = day.activities + activity
+                )
+
+                onTripChange(
+                    trip.copy(
+                        days = trip.days.map {
+                            if (it.id == day.id) updatedDay else it
+                        }
+                    )
+                )
+                addActivity = false
+            }
+        )
     }
+
+    editingActivity?.let { activity ->
+        EditActivityDialog(
+            activity = activity,
+            onDismiss = { editingActivity = null },
+            onConfirm = { updated ->
+                val updatedDay = day.copy(
+                    activities = day.activities.map {
+                        if (it.id == updated.id) updated else it
+                    }
+                )
+                onTripChange(
+                    trip.copy(
+                        days = trip.days.map {
+                            if (it.id == day.id) updatedDay else it
+                        }
+                    )
+                )
+                editingActivity = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun EditActivityDialog(
+    activity: ActivityItem,
+    onDismiss: () -> Unit,
+    onConfirm: (ActivityItem) -> Unit
+) {
+    var time by remember(activity.id) { mutableStateOf(activity.time) }
+    var name by remember(activity.id) { mutableStateOf(activity.name) }
+    var location by remember(activity.id) { mutableStateOf(activity.location) }
+    var notes by remember(activity.id) { mutableStateOf(activity.notes) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("עריכת פעילות") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = time,
+                    onValueChange = { time = it },
+                    label = { Text("שעה") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("שם הפעילות") }
+                )
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = { location = it },
+                    label = { Text("מיקום") }
+                )
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("הערות") }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirm(
+                        activity.copy(
+                            time = time,
+                            name = name,
+                            location = location,
+                            notes = notes,
+                            mapsUrl =
+                                "https://www.google.com/maps/search/?api=1&query=" +
+                                    Uri.encode(location.ifBlank { name })
+                        )
+                    )
+                }
+            ) {
+                Text("שמירה")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("ביטול") }
+        }
+    )
 }
 
 @Composable
