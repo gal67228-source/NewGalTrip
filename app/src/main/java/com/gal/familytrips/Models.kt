@@ -15,7 +15,8 @@ data class ActivityItem(
     val cost: String = "",
     val notes: String = "",
     val mapsUrl: String = "",
-    val completed: Boolean = false
+    val completed: Boolean = false,
+    val fixedTime: Boolean = false
 )
 
 @Serializable

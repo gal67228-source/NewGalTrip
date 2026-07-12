@@ -1393,6 +1393,9 @@ private fun DayDetailScreen(
     var editingActivity by remember { mutableStateOf<ActivityItem?>(null) }
     var movingActivity by remember { mutableStateOf<ActivityItem?>(null) }
     var showLiveMap by remember { mutableStateOf(false) }
+    var insertionIndex by remember(day.id) {
+        mutableStateOf<Int?>(null)
+    }
 
     val orderedActivities = remember(day.id) {
         mutableStateListOf<ActivityItem>().apply {
@@ -1461,9 +1464,6 @@ private fun DayDetailScreen(
                     )
                 }
             }
-            IconButton(onClick = { quickAddActivity = true }) {
-                Icon(Icons.Default.AddCircle, "הוספת פעילות מהירה", tint = Sky)
-            }
         }
 
         Spacer(Modifier.height(9.dp))
@@ -1471,6 +1471,26 @@ private fun DayDetailScreen(
         Spacer(Modifier.height(8.dp))
         WeatherCard(trip = trip, day = day, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(9.dp))
+
+        val timelineConflict = remember(orderedActivities.toList()) {
+            findTimelineConflict(orderedActivities.toList())
+        }
+
+        timelineConflict?.let { conflict ->
+            SectionCard(containerColor = Color(0xFFFFE5E1)) {
+                Text(
+                    "⚠ התנגשות בשעות",
+                    fontWeight = FontWeight.Bold,
+                    color = Coral
+                )
+                Text(
+                    conflict,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1528,10 +1548,22 @@ private fun DayDetailScreen(
             verticalArrangement = Arrangement.spacedBy(9.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            items(
+            itemsIndexed(
                 items = orderedActivities,
-                key = { it.id }
-            ) { activity ->
+                key = { _, item -> item.id }
+            ) { index, activity ->
+                TimelineInsertButton(
+                    label = if (index == 0) {
+                        "הוסף בתחילת היום"
+                    } else {
+                        "הוסף כאן"
+                    },
+                    onClick = {
+                        insertionIndex = index
+                        quickAddActivity = true
+                    }
+                )
+
                 val isDragging = draggingActivityId == activity.id
 
                 Card(
@@ -1619,13 +1651,65 @@ private fun DayDetailScreen(
                             Spacer(Modifier.width(8.dp))
 
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(activity.time, color = Sky, fontWeight = FontWeight.Bold)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                ) {
+                                    Text(
+                                        activityTimeRange(activity),
+                                        color = Sky,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = if (isFixedScheduleActivity(activity)) {
+                                            SoftSun
+                                        } else {
+                                            SoftAqua
+                                        }
+                                    ) {
+                                        Text(
+                                            if (isFixedScheduleActivity(activity)) {
+                                                "🔒 קבועה"
+                                            } else {
+                                                "↻ גמישה"
+                                            },
+                                            modifier = Modifier.padding(
+                                                horizontal = 8.dp,
+                                                vertical = 3.dp
+                                            ),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isFixedScheduleActivity(activity)) {
+                                                Color(0xFF8F6500)
+                                            } else {
+                                                Aqua
+                                            }
+                                        )
+                                    }
+                                }
                                 Text(
                                     activity.name,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
+
+                            IconButton(
+                                onClick = {
+                                    insertionIndex = index + 1
+                                    quickAddActivity = true
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                CompactActionCircle(
+                                    symbol = "+",
+                                    description = "הוספת פעילות אחרי ${activity.name}",
+                                    background = SoftBlue,
+                                    content = Sky
+                                )
+                            }
+
                             Checkbox(
                                 checked = activity.completed,
                                 onCheckedChange = { checked ->
@@ -1815,6 +1899,17 @@ private fun DayDetailScreen(
             }
 
             item {
+                TimelineInsertButton(
+                    label = "הוסף פעילות לסוף היום",
+                    prominent = true,
+                    onClick = {
+                        insertionIndex = orderedActivities.size
+                        quickAddActivity = true
+                    }
+                )
+            }
+
+            item {
                 val dayRestaurants = trip.restaurants.filter { it.dayId == day.id }
                 DayRestaurantsCard(
                     day = day,
@@ -1855,17 +1950,36 @@ private fun DayDetailScreen(
     }
 
     if (quickAddActivity) {
+        val targetIndex = (insertionIndex ?: orderedActivities.size)
+            .coerceIn(0, orderedActivities.size)
+        val prefixActivities = orderedActivities
+            .take(targetIndex)
+
         QuickActivityDialog(
             trip = trip,
-            day = day,
-            onDismiss = { quickAddActivity = false },
+            day = day.copy(activities = prefixActivities),
+            initialTime = suggestedTimeAtIndex(
+                orderedActivities.toList(),
+                targetIndex
+            ),
+            onDismiss = {
+                quickAddActivity = false
+                insertionIndex = null
+            },
             onOpenFullEditor = {
                 quickAddActivity = false
                 addActivity = true
             },
             onConfirm = { activity ->
+                val updatedActivities = orderedActivities.toMutableList()
+                updatedActivities.add(targetIndex, activity)
+
+                val recalculated = recalculateActivityTimes(
+                    updatedActivities
+                )
+
                 val updatedDay = day.copy(
-                    activities = day.activities + activity
+                    activities = recalculated
                 )
                 onTripChange(
                     trip.copy(
@@ -1875,6 +1989,7 @@ private fun DayDetailScreen(
                     )
                 )
                 quickAddActivity = false
+                insertionIndex = null
             }
         )
     }
@@ -1913,13 +2028,22 @@ private fun DayDetailScreen(
             activity = null,
             onDismiss = { addActivity = false },
             onConfirm = { activity ->
-                val updatedDay = day.copy(activities = day.activities + activity)
+                val targetIndex = (insertionIndex ?: orderedActivities.size)
+                    .coerceIn(0, orderedActivities.size)
+                val updatedActivities = orderedActivities.toMutableList()
+                updatedActivities.add(targetIndex, activity)
+                val updatedDay = day.copy(
+                    activities = recalculateActivityTimes(updatedActivities)
+                )
                 onTripChange(
                     trip.copy(
-                        days = trip.days.map { if (it.id == day.id) updatedDay else it }
+                        days = trip.days.map {
+                            if (it.id == day.id) updatedDay else it
+                        }
                     )
                 )
                 addActivity = false
+                insertionIndex = null
             }
         )
     }
@@ -1930,10 +2054,11 @@ private fun DayDetailScreen(
             activity = activity,
             onDismiss = { editingActivity = null },
             onConfirm = { updated ->
+                val editedActivities = day.activities.map {
+                    if (it.id == updated.id) updated else it
+                }
                 val updatedDay = day.copy(
-                    activities = day.activities.map {
-                        if (it.id == updated.id) updated else it
-                    }
+                    activities = recalculateActivityTimes(editedActivities)
                 )
                 onTripChange(
                     trip.copy(
@@ -1942,6 +2067,62 @@ private fun DayDetailScreen(
                 )
                 editingActivity = null
             }
+        )
+    }
+}
+
+@Composable
+private fun TimelineInsertButton(
+    label: String,
+    prominent: Boolean = false,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = if (prominent) 5.dp else 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        HorizontalDivider(
+            modifier = Modifier.weight(1f),
+            color = Color(0xFFDDE5EE)
+        )
+
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(50),
+            color = if (prominent) SoftBlue else CardWhite,
+            border = BorderStroke(
+                1.dp,
+                if (prominent) Sky else Color(0xFFDDE5EE)
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(
+                    horizontal = if (prominent) 14.dp else 10.dp,
+                    vertical = if (prominent) 8.dp else 5.dp
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text(
+                    "+",
+                    color = Sky,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    label,
+                    color = if (prominent) Navy else TextSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (prominent) FontWeight.Bold else FontWeight.Normal
+                )
+            }
+        }
+
+        HorizontalDivider(
+            modifier = Modifier.weight(1f),
+            color = Color(0xFFDDE5EE)
         )
     }
 }
@@ -2361,6 +2542,7 @@ private fun CompactActionCircle(
 private fun QuickActivityDialog(
     trip: Trip,
     day: TripDay,
+    initialTime: String,
     onDismiss: () -> Unit,
     onOpenFullEditor: () -> Unit,
     onConfirm: (ActivityItem) -> Unit
@@ -2371,7 +2553,12 @@ private fun QuickActivityDialog(
     var selectedPreset by remember {
         mutableStateOf(activityPresets.first())
     }
-    var time by remember { mutableStateOf(nextSuggestedTime(day)) }
+    var time by remember(initialTime) {
+        mutableStateOf(initialTime)
+    }
+    var fixedTime by remember {
+        mutableStateOf(false)
+    }
     var name by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
     var duration by remember { mutableStateOf(selectedPreset.duration) }
@@ -2508,6 +2695,7 @@ private fun QuickActivityDialog(
         name = ""
         location = ""
         duration = preset.duration
+        fixedTime = preset.key in listOf("flight", "train")
         selectedSuggestionId = null
         placeSuggestions = emptyList()
     }
@@ -2583,10 +2771,59 @@ private fun QuickActivityDialog(
                     OutlinedTextField(
                         value = time,
                         onValueChange = { time = it },
-                        label = { Text("שעה") },
+                        label = { Text("שעת התחלה") },
+                        supportingText = {
+                            Text(
+                                if (fixedTime) {
+                                    "השעה לא תוזז בחישוב אוטומטי"
+                                } else {
+                                    "נקבעה לפי סיום הפעילות הקודמת"
+                                }
+                            )
+                        },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+
+                item {
+                    SectionCard(
+                        containerColor = if (fixedTime) {
+                            SoftSun
+                        } else {
+                            SoftAqua
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    if (fixedTime) {
+                                        "🔒 שעה קבועה"
+                                    } else {
+                                        "↻ שעה גמישה"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy
+                                )
+                                Text(
+                                    if (fixedTime) {
+                                        "טיסה, הזמנה, רכבת או אירוע שלא ניתן להזיז"
+                                    } else {
+                                        "הפעילות תידחף אוטומטית כשמוסיפים משהו לפניה"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                            }
+                            Switch(
+                                checked = fixedTime,
+                                onCheckedChange = { fixedTime = it }
+                            )
+                        }
+                    }
                 }
 
                 item {
@@ -2911,7 +3148,8 @@ private fun QuickActivityDialog(
                             cost = "",
                             notes = selectedPreset.notes,
                             mapsUrl = mapsUrl,
-                            completed = false
+                            completed = false,
+                            fixedTime = fixedTime
                         )
                     )
                 }
@@ -2953,22 +3191,107 @@ private fun recalculateActivityTimes(
 ): List<ActivityItem> {
     if (activities.isEmpty()) return emptyList()
 
-    val firstStart = activityTimeMinutes(activities.first().time)
+    var cursor = activityTimeMinutes(activities.first().time)
         ?: 9 * 60
 
-    var currentStart = firstStart
-
     return activities.mapIndexed { index, activity ->
-        val updated = activity.copy(
-            time = minutesToClock(currentStart)
-        )
+        val originalStart = activityTimeMinutes(activity.time)
+        val fixed = isFixedScheduleActivity(activity)
 
-        val duration = activityDurationMinutes(activity.duration)
-        currentStart = (currentStart + duration)
-            .coerceAtMost(23 * 60 + 59)
+        val start = when {
+            index == 0 -> originalStart ?: cursor
+            fixed && originalStart != null -> originalStart
+            else -> cursor
+        }
 
+        val updated = if (fixed) {
+            activity
+        } else {
+            activity.copy(time = minutesToClock(start))
+        }
+
+        cursor = start + activityDurationMinutes(activity.duration)
         updated
     }
+}
+
+private fun suggestedTimeAtIndex(
+    activities: List<ActivityItem>,
+    index: Int
+): String {
+    if (index <= 0 || activities.isEmpty()) {
+        return activities.firstOrNull()?.time
+            ?.takeIf { it.isNotBlank() }
+            ?: "09:00"
+    }
+
+    val previous = activities
+        .getOrNull(index - 1)
+        ?: return "09:00"
+
+    val previousStart = activityTimeMinutes(previous.time)
+        ?: 9 * 60
+    val end = previousStart +
+        activityDurationMinutes(previous.duration)
+
+    return minutesToClock(end)
+}
+
+private fun activityTimeRange(
+    activity: ActivityItem
+): String {
+    val start = activityTimeMinutes(activity.time)
+        ?: return activity.time.ifBlank { "--:--" }
+    val end = start + activityDurationMinutes(activity.duration)
+    return "${minutesToClock(start)}–${minutesToClock(end)}"
+}
+
+private fun isFixedScheduleActivity(
+    activity: ActivityItem
+): Boolean {
+    if (activity.fixedTime) return true
+
+    return activity.id.startsWith("auto-flight-") ||
+        activity.id.startsWith("auto-hotel-stay-") ||
+        activity.name.contains("טיסה") ||
+        activity.name.contains("צ׳ק־אין") ||
+        activity.name.contains("צ׳ק־אאוט")
+}
+
+private fun findTimelineConflict(
+    activities: List<ActivityItem>
+): String? {
+    var previousEnd: Int? = null
+    var previousName = ""
+
+    activities.forEach { activity ->
+        val start = activityTimeMinutes(activity.time)
+            ?: return@forEach
+        val end = start + activityDurationMinutes(activity.duration)
+
+        val knownPreviousEnd = previousEnd
+        if (
+            knownPreviousEnd != null &&
+            start < knownPreviousEnd &&
+            isFixedScheduleActivity(activity)
+        ) {
+            return buildString {
+                append(previousName)
+                append(" מסתיימת ב־")
+                append(minutesToClock(knownPreviousEnd))
+                append(", אבל ")
+                append(activity.name)
+                append(" קבועה ל־")
+                append(minutesToClock(start))
+                append(". מומלץ לקצר או להעביר את הפעילות שלפניה.")
+            }
+        }
+
+        previousEnd = maxOf(knownPreviousEnd ?: end, end)
+        previousName = activity.name
+    }
+
+    return null
 }
 
 private fun activityDurationMinutes(value: String): Int {
@@ -3251,6 +3574,9 @@ private fun ActivityEditorDialog(
     var duration by remember(activity?.id) { mutableStateOf(activity?.duration.orEmpty()) }
     var cost by remember(activity?.id) { mutableStateOf(activity?.cost.orEmpty()) }
     var notes by remember(activity?.id) { mutableStateOf(activity?.notes.orEmpty()) }
+    var fixedTime by remember(activity?.id) {
+        mutableStateOf(activity?.fixedTime ?: false)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -3265,6 +3591,26 @@ private fun ActivityEditorDialog(
                 item { OutlinedTextField(duration, { duration = it }, label = { Text("משך") }) }
                 item { OutlinedTextField(cost, { cost = it }, label = { Text("עלות") }) }
                 item { OutlinedTextField(notes, { notes = it }, label = { Text("הערות") }) }
+                item {
+                    SectionCard(
+                        containerColor = if (fixedTime) SoftSun else SoftAqua
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (fixedTime) "🔒 שעה קבועה" else "↻ שעה גמישה",
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Switch(
+                                checked = fixedTime,
+                                onCheckedChange = { fixedTime = it }
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -3283,7 +3629,8 @@ private fun ActivityEditorDialog(
                             notes = notes,
                             mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
                                 Uri.encode(location.ifBlank { name }),
-                            completed = activity?.completed ?: false
+                            completed = activity?.completed ?: false,
+                            fixedTime = fixedTime
                         )
                     )
                 }
