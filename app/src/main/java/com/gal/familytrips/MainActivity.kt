@@ -16,6 +16,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.LazyColumn
@@ -2362,12 +2366,13 @@ private fun QuickActivityDialog(
     onConfirm: (ActivityItem) -> Unit
 ) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     var selectedPreset by remember {
         mutableStateOf(activityPresets.first())
     }
     var time by remember { mutableStateOf(nextSuggestedTime(day)) }
-    var name by remember { mutableStateOf(selectedPreset.defaultName) }
+    var name by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
     var duration by remember { mutableStateOf(selectedPreset.duration) }
     var selectedSuggestionId by remember { mutableStateOf<String?>(null) }
@@ -2375,6 +2380,7 @@ private fun QuickActivityDialog(
         mutableStateOf<List<FreePlaceSuggestion>>(emptyList())
     }
     var searching by remember { mutableStateOf(false) }
+    var searchRequest by remember { mutableStateOf(0) }
 
     val previousActivity = remember(day.activities) {
         day.activities
@@ -2449,12 +2455,12 @@ private fun QuickActivityDialog(
         name,
         selectedPreset.key,
         dayDestination,
-        trip.offlineMode
+        trip.offlineMode,
+        searchRequest
     ) {
         placeSuggestions = emptyList()
 
         val normalized = name.trim()
-        val isDefaultName = normalized == selectedPreset.defaultName
 
         val searchCategory = when (selectedPreset.key) {
             "meal" -> PlaceSearchCategory.RESTAURANT
@@ -2481,8 +2487,7 @@ private fun QuickActivityDialog(
             selectedPreset.key == "hotel" ||
             !searchableType ||
             trip.offlineMode ||
-            normalized.length < 2 ||
-            isDefaultName
+            normalized.length < 2
         ) {
             searching = false
             return@LaunchedEffect
@@ -2500,7 +2505,7 @@ private fun QuickActivityDialog(
 
     fun selectPreset(preset: ActivityPreset) {
         selectedPreset = preset
-        name = preset.defaultName
+        name = ""
         location = ""
         duration = preset.duration
         selectedSuggestionId = null
@@ -2631,6 +2636,13 @@ private fun QuickActivityDialog(
                             )
                         },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                if (name.trim().length >= 2) searchRequest += 1
+                                keyboardController?.hide()
+                            }
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -3534,6 +3546,8 @@ private fun HotelSkeletonEditorDialog(
     onDismiss: () -> Unit,
     onConfirm: (Hotel) -> Unit
 ) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     var name by remember(hotel?.id) {
         mutableStateOf(hotel?.name.orEmpty())
     }
@@ -3716,6 +3730,13 @@ private fun HotelSkeletonEditorDialog(
                             Text("אפשר להקליד שם מלא או רק חלק ממנו")
                         },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                if (searchText.trim().length >= 2) searchRequest += 1
+                                keyboardController?.hide()
+                            }
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -4266,6 +4287,8 @@ private fun SmartRestaurantDialog(
     onDismiss: () -> Unit,
     onConfirm: (Restaurant) -> Unit
 ) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     var selectedDayId by remember {
         mutableStateOf(trip.days.sortedBy { it.date }.firstOrNull()?.id.orEmpty())
     }
@@ -4283,6 +4306,7 @@ private fun SmartRestaurantDialog(
     }
     var searching by remember { mutableStateOf(false) }
     var searchMessage by remember { mutableStateOf<String?>(null) }
+    var searchRequest by remember { mutableStateOf(0) }
 
     val selectedDay = trip.days.firstOrNull { it.id == selectedDayId }
     val destination = selectedDay
@@ -4297,7 +4321,8 @@ private fun SmartRestaurantDialog(
     LaunchedEffect(
         searchText,
         destination,
-        trip.offlineMode
+        trip.offlineMode,
+        searchRequest
     ) {
         suggestions = emptyList()
         searchMessage = null
@@ -4406,6 +4431,13 @@ private fun SmartRestaurantDialog(
                             Text("אפשר להקליד שם מלא או חלק ממנו")
                         },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                if (searchText.trim().length >= 2) searchRequest += 1
+                                keyboardController?.hide()
+                            }
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
