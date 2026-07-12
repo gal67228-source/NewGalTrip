@@ -2372,7 +2372,7 @@ private fun QuickActivityDialog(
     var duration by remember { mutableStateOf(selectedPreset.duration) }
     var selectedSuggestionId by remember { mutableStateOf<String?>(null) }
     var placeSuggestions by remember {
-        mutableStateOf<List<SmartPlaceSuggestion>>(emptyList())
+        mutableStateOf<List<FreePlaceSuggestion>>(emptyList())
     }
     var searching by remember { mutableStateOf(false) }
 
@@ -2416,16 +2416,18 @@ private fun QuickActivityDialog(
                         hotel.address.lowercase().contains(query)
                 }
                 .map { hotel ->
-                    SmartPlaceSuggestion(
+                    FreePlaceSuggestion(
                         id = "hotel-${hotel.id}",
-                        title = hotel.name,
+                        name = hotel.name,
                         address = hotel.address,
+                        latitude = null,
+                        longitude = null,
                         source = "מלון שמור",
-                        mapsUrl = hotel.mapsUrl
+                        category = "hotel"
                     )
                 }
                 .distinctBy {
-                    "${it.title.lowercase()}|${it.address.lowercase()}"
+                    "${it.name.lowercase()}|${it.address.lowercase()}"
                 }
                 .take(8)
         }
@@ -2454,43 +2456,44 @@ private fun QuickActivityDialog(
         val normalized = name.trim()
         val isDefaultName = normalized == selectedPreset.defaultName
 
+        val searchCategory = when (selectedPreset.key) {
+            "meal" -> PlaceSearchCategory.RESTAURANT
+            "attraction" -> PlaceSearchCategory.ATTRACTION
+            "shopping" -> PlaceSearchCategory.SHOPPING
+            "pool" -> PlaceSearchCategory.POOL
+            "walk" -> PlaceSearchCategory.PARK
+            "train" -> PlaceSearchCategory.STATION
+            "transfer" -> PlaceSearchCategory.STATION
+            else -> PlaceSearchCategory.GENERIC
+        }
+
         val searchableType = selectedPreset.key in listOf(
             "attraction",
             "meal",
             "shopping",
             "pool",
-            "walk"
+            "walk",
+            "train",
+            "transfer"
         )
 
         if (
             selectedPreset.key == "hotel" ||
             !searchableType ||
             trip.offlineMode ||
-            normalized.length < 3 ||
+            normalized.length < 2 ||
             isDefaultName
         ) {
             searching = false
             return@LaunchedEffect
         }
 
-        delay(700)
+        delay(650)
         searching = true
-
-        val typeContext = when (selectedPreset.key) {
-            "meal" -> "restaurant"
-            "attraction" -> "attraction"
-            "shopping" -> "shopping mall"
-            "pool" -> "water park pool"
-            "walk" -> "landmark park"
-            else -> ""
-        }
-
-        placeSuggestions = AndroidPlaceSearch.search(
-            context = context,
-            query = listOf(normalized, typeContext)
-                .filter { it.isNotBlank() }
-                .joinToString(" "),
-            destinationContext = dayDestination
+        placeSuggestions = FreePlaceSearch.search(
+            query = normalized,
+            destination = dayDestination,
+            category = searchCategory
         )
         searching = false
     }
@@ -2504,10 +2507,10 @@ private fun QuickActivityDialog(
         placeSuggestions = emptyList()
     }
 
-    fun selectSuggestion(suggestion: SmartPlaceSuggestion) {
+    fun selectSuggestion(suggestion: FreePlaceSuggestion) {
         selectedSuggestionId = suggestion.id
-        name = suggestion.title
-        location = suggestion.address.ifBlank { suggestion.title }
+        name = suggestion.name
+        location = suggestion.address.ifBlank { suggestion.name }
     }
 
     AlertDialog(
@@ -2703,7 +2706,7 @@ private fun QuickActivityDialog(
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text(
-                                        suggestion.title,
+                                        suggestion.name,
                                         fontWeight = FontWeight.Bold,
                                         color = Navy
                                     )
@@ -2864,8 +2867,15 @@ private fun QuickActivityDialog(
                                 "&destination=" +
                                 Uri.encode(destinationQuery)
                         }
-                        !selectedSuggestion?.mapsUrl.isNullOrBlank() -> {
-                            selectedSuggestion!!.mapsUrl
+                        selectedPreset.key == "hotel" -> {
+                            trip.hotels.firstOrNull {
+                                "hotel-${it.id}" == selectedSuggestionId
+                            }?.mapsUrl?.takeIf { it.isNotBlank() }
+                                ?: "https://www.google.com/maps/search/?api=1&query=" +
+                                    Uri.encode(destinationQuery)
+                        }
+                        selectedSuggestion != null -> {
+                            freePlaceMapsUrl(selectedSuggestion)
                         }
                         else -> {
                             "https://www.google.com/maps/search/?api=1&query=" +
@@ -3550,6 +3560,7 @@ private fun HotelSkeletonEditorDialog(
     }
     var searching by remember { mutableStateOf(false) }
     var searchMessage by remember { mutableStateOf<String?>(null) }
+    var searchRequest by remember { mutableStateOf(0) }
 
     var boardBasis by remember(hotel?.id) {
         mutableStateOf(hotel?.boardBasis ?: "לינה בלבד")
@@ -3602,7 +3613,8 @@ private fun HotelSkeletonEditorDialog(
     LaunchedEffect(
         searchText,
         destinationForSearch,
-        trip.offlineMode
+        trip.offlineMode,
+        searchRequest
     ) {
         suggestions = emptyList()
         searchMessage = null
@@ -3616,7 +3628,7 @@ private fun HotelSkeletonEditorDialog(
             return@LaunchedEffect
         }
 
-        if (query.length < 3 || query == hotel?.name) {
+        if (query.length < 2 || (query == hotel?.name && searchRequest == 0)) {
             searching = false
             return@LaunchedEffect
         }
@@ -3634,7 +3646,7 @@ private fun HotelSkeletonEditorDialog(
 
         if (results.isEmpty()) {
             searchMessage =
-                "לא נמצאו מלונות. נסה שם באנגלית, שם קצר יותר או יעד מדויק יותר."
+                "לא נמצאו תוצאות. נסה רק חלק משם המלון, שם באנגלית או בלי שם הרשת."
         }
     }
 
@@ -3671,7 +3683,7 @@ private fun HotelSkeletonEditorDialog(
                             color = Navy
                         )
                         Text(
-                            "החיפוש מתבצע ב-OpenStreetMap לפי היעד: $destinationForSearch",
+                            "החיפוש משלב Photon ו-Nominatim לפי היעד: $destinationForSearch",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary
                         )
@@ -3701,13 +3713,28 @@ private fun HotelSkeletonEditorDialog(
                             }
                         },
                         supportingText = {
-                            Text(
-                                "מומלץ להקליד את שם המלון באנגלית"
-                            )
+                            Text("אפשר להקליד שם מלא או רק חלק ממנו")
                         },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+
+                item {
+                    FilledTonalButton(
+                        enabled = searchText.trim().length >= 2 &&
+                            !searching &&
+                            !trip.offlineMode,
+                        onClick = {
+                            searchRequest += 1
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            if (searching) "מחפש..." else "חיפוש נוסף"
+                        )
+                    }
                 }
 
                 searchMessage?.let { message ->
@@ -4218,31 +4245,310 @@ private fun RestaurantsScreen(
     }
 
     if (add) {
-        SimpleTextDialog(
-            title = "מסעדה חדשה",
-            fields = listOf("שם", "אזור", "סוג", "מחיר", "הערה"),
+        SmartRestaurantDialog(
+            trip = trip,
             onDismiss = { add = false },
-            onConfirm = { values ->
-                val defaultDayId = trip.days.firstOrNull()?.id
+            onConfirm = { restaurant ->
                 onTripChange(
                     trip.copy(
-                        restaurants = trip.restaurants + Restaurant(
-                            id = UUID.randomUUID().toString(),
-                            dayId = defaultDayId,
-                            name = values[0],
-                            area = values[1],
-                            type = values[2],
-                            price = values[3],
-                            notes = values[4],
-                            mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
-                                Uri.encode(values[0] + " " + values[1])
-                        )
+                        restaurants = trip.restaurants + restaurant
                     )
                 )
                 add = false
             }
         )
     }
+}
+
+@Composable
+private fun SmartRestaurantDialog(
+    trip: Trip,
+    onDismiss: () -> Unit,
+    onConfirm: (Restaurant) -> Unit
+) {
+    var selectedDayId by remember {
+        mutableStateOf(trip.days.sortedBy { it.date }.firstOrNull()?.id.orEmpty())
+    }
+    var dayMenuOpen by remember { mutableStateOf(false) }
+    var searchText by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    var mapsUrl by remember { mutableStateOf("") }
+    var selectedSuggestionId by remember { mutableStateOf<String?>(null) }
+    var suggestions by remember {
+        mutableStateOf<List<FreePlaceSuggestion>>(emptyList())
+    }
+    var searching by remember { mutableStateOf(false) }
+    var searchMessage by remember { mutableStateOf<String?>(null) }
+
+    val selectedDay = trip.days.firstOrNull { it.id == selectedDayId }
+    val destination = selectedDay
+        ?.destination
+        ?.split("→")
+        ?.lastOrNull()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: trip.destinationStops.firstOrNull()
+        ?: trip.destination
+
+    LaunchedEffect(
+        searchText,
+        destination,
+        trip.offlineMode
+    ) {
+        suggestions = emptyList()
+        searchMessage = null
+
+        if (trip.offlineMode) {
+            searching = false
+            searchMessage = "במצב אופליין אפשר להזין את הפרטים ידנית."
+            return@LaunchedEffect
+        }
+
+        val query = searchText.trim()
+        if (query.length < 2) {
+            searching = false
+            return@LaunchedEffect
+        }
+
+        delay(650)
+        searching = true
+        suggestions = FreePlaceSearch.search(
+            query = query,
+            destination = destination,
+            category = PlaceSearchCategory.RESTAURANT
+        )
+        searching = false
+
+        if (suggestions.isEmpty()) {
+            searchMessage =
+                "לא נמצאו תוצאות. נסה חלק מהשם או את שם המסעדה באנגלית."
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("מסעדה חדשה") },
+        text = {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { dayMenuOpen = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                selectedDay?.let {
+                                    "${it.date} · ${it.title}"
+                                } ?: "בחירת יום",
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("⌄")
+                        }
+
+                        DropdownMenu(
+                            expanded = dayMenuOpen,
+                            onDismissRequest = { dayMenuOpen = false }
+                        ) {
+                            trip.days.sortedBy { it.date }.forEach { day ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text("${day.date} · ${day.title}")
+                                    },
+                                    onClick = {
+                                        selectedDayId = day.id
+                                        dayMenuOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    SectionCard(containerColor = SoftCoral) {
+                        Text(
+                            "חיפוש לפי יעד היום",
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+                        Text(
+                            destination,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = searchText,
+                        onValueChange = {
+                            searchText = it
+                            selectedSuggestionId = null
+                        },
+                        label = { Text("חיפוש מסעדה") },
+                        leadingIcon = { Text("🍽️") },
+                        trailingIcon = {
+                            if (searching) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        },
+                        supportingText = {
+                            Text("אפשר להקליד שם מלא או חלק ממנו")
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                searchMessage?.let { message ->
+                    item {
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                items(suggestions, key = { it.id }) { suggestion ->
+                    Surface(
+                        onClick = {
+                            selectedSuggestionId = suggestion.id
+                            name = suggestion.name
+                            searchText = suggestion.name
+                            address = suggestion.address
+                            mapsUrl = freePlaceMapsUrl(suggestion)
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (
+                            selectedSuggestionId == suggestion.id
+                        ) SoftMint else CardWhite,
+                        border = BorderStroke(
+                            if (selectedSuggestionId == suggestion.id) 2.dp else 1.dp,
+                            if (selectedSuggestionId == suggestion.id) {
+                                Mint
+                            } else {
+                                Color(0xFFE3E9F0)
+                            }
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🍴")
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    suggestion.name,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy
+                                )
+                                Text(
+                                    suggestion.address,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("שם המסעדה") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = {
+                            address = it
+                            mapsUrl = ""
+                        },
+                        label = { Text("כתובת") },
+                        maxLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = type,
+                        onValueChange = { type = it },
+                        label = { Text("סוג אוכל") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = price,
+                        onValueChange = { price = it },
+                        label = { Text("רמת מחיר") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("הערה") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selectedDayId.isNotBlank() &&
+                    name.isNotBlank() &&
+                    address.isNotBlank(),
+                onClick = {
+                    onConfirm(
+                        Restaurant(
+                            id = UUID.randomUUID().toString(),
+                            dayId = selectedDayId,
+                            name = name.trim(),
+                            area = address.trim(),
+                            type = type.trim(),
+                            price = price.trim(),
+                            notes = notes.trim(),
+                            mapsUrl = mapsUrl.ifBlank {
+                                "https://www.google.com/maps/search/?api=1&query=" +
+                                    Uri.encode("$name $address")
+                            }
+                        )
+                    )
+                }
+            ) {
+                Text("שמירה")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
 }
 
 @Composable

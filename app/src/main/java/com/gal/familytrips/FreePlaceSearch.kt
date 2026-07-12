@@ -9,29 +9,123 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 
-data class FreeHotelSuggestion(
+enum class PlaceSearchCategory(
+    val queryWords: List<String>,
+    val rankingWords: List<String>
+) {
+    HOTEL(
+        queryWords = listOf("hotel"),
+        rankingWords = listOf(
+            "hotel", "hostel", "motel", "resort",
+            "inn", "apart", "suite", "lodge", "guest", "מלון"
+        )
+    ),
+    RESTAURANT(
+        queryWords = listOf("restaurant"),
+        rankingWords = listOf(
+            "restaurant", "food", "cafe", "bistro",
+            "pizza", "grill", "מסעדה", "בית קפה"
+        )
+    ),
+    ATTRACTION(
+        queryWords = listOf("attraction landmark"),
+        rankingWords = listOf(
+            "attraction", "museum", "gallery", "castle",
+            "palace", "monument", "zoo", "aquarium",
+            "theme park", "מוזיאון", "אטרקציה", "ארמון", "גן חיות"
+        )
+    ),
+    CAFE(
+        queryWords = listOf("cafe coffee"),
+        rankingWords = listOf(
+            "cafe", "coffee", "bakery", "patisserie", "בית קפה", "מאפייה"
+        )
+    ),
+    SHOPPING(
+        queryWords = listOf("shopping mall"),
+        rankingWords = listOf(
+            "mall", "shopping", "market", "store", "קניון", "שוק", "קניות"
+        )
+    ),
+    PARK(
+        queryWords = listOf("park garden landmark"),
+        rankingWords = listOf(
+            "park", "garden", "viewpoint", "promenade",
+            "פארק", "גן", "תצפית", "טיילת"
+        )
+    ),
+    BEACH(
+        queryWords = listOf("beach"),
+        rankingWords = listOf("beach", "coast", "חוף")
+    ),
+    POOL(
+        queryWords = listOf("water park swimming pool"),
+        rankingWords = listOf(
+            "water park", "pool", "spa", "aquapark",
+            "בריכה", "פארק מים", "ספא"
+        )
+    ),
+    STATION(
+        queryWords = listOf("train station metro station"),
+        rankingWords = listOf(
+            "station", "railway", "metro", "terminal",
+            "תחנה", "רכבת", "מטרו"
+        )
+    ),
+    AIRPORT(
+        queryWords = listOf("airport"),
+        rankingWords = listOf("airport", "terminal", "שדה תעופה")
+    ),
+    HOSPITAL(
+        queryWords = listOf("hospital clinic"),
+        rankingWords = listOf("hospital", "clinic", "בית חולים", "מרפאה")
+    ),
+    PHARMACY(
+        queryWords = listOf("pharmacy"),
+        rankingWords = listOf("pharmacy", "drugstore", "בית מרקחת")
+    ),
+    GENERIC(
+        queryWords = emptyList(),
+        rankingWords = emptyList()
+    )
+}
+
+data class FreePlaceSuggestion(
     val id: String,
     val name: String,
     val address: String,
     val latitude: Double?,
     val longitude: Double?,
-    val source: String = ""
+    val source: String,
+    val category: String = ""
 )
 
-object FreeHotelSearch {
+object FreePlaceSearch {
     suspend fun search(
         query: String,
         destination: String,
+        category: PlaceSearchCategory,
         limit: Int = 10
-    ): List<FreeHotelSuggestion> = withContext(Dispatchers.IO) {
+    ): List<FreePlaceSuggestion> = withContext(Dispatchers.IO) {
         val normalizedQuery = query.trim()
         if (normalizedQuery.length < 2) {
             return@withContext emptyList()
         }
 
-        val photonResults = searchPhoton(normalizedQuery, destination, limit)
-        val nominatimResults = if (photonResults.size < 4) {
-            searchNominatim(normalizedQuery, destination, limit)
+        val photonResults = searchPhoton(
+            query = normalizedQuery,
+            destination = destination,
+            category = category,
+            limit = limit
+        )
+
+        val nominatimResults = if (photonResults.size < 5) {
+            searchNominatim(
+                query = normalizedQuery,
+                destination = destination,
+                category = category,
+                limit = limit
+            )
         } else {
             emptyList()
         }
@@ -39,6 +133,7 @@ object FreeHotelSearch {
         rankAndMerge(
             query = normalizedQuery,
             destination = destination,
+            category = category,
             results = photonResults + nominatimResults,
             limit = limit
         )
@@ -47,15 +142,21 @@ object FreeHotelSearch {
     private fun searchPhoton(
         query: String,
         destination: String,
+        category: PlaceSearchCategory,
         limit: Int
-    ): List<FreeHotelSuggestion> {
+    ): List<FreePlaceSuggestion> {
+        val categoryText = category.queryWords.joinToString(" ")
         val variants = listOf(
-            "$query $destination",
-            "$query hotel $destination",
+            listOf(query, categoryText, destination)
+                .filter { it.isNotBlank() }.joinToString(" "),
+            listOf(query, destination)
+                .filter { it.isNotBlank() }.joinToString(" "),
+            listOf(query, categoryText)
+                .filter { it.isNotBlank() }.joinToString(" "),
             query
         ).distinct()
 
-        val results = mutableListOf<FreeHotelSuggestion>()
+        val results = mutableListOf<FreePlaceSuggestion>()
 
         variants.forEachIndexed { variantIndex, fullQuery ->
             val url = URL(
@@ -76,15 +177,19 @@ object FreeHotelSearch {
     private fun searchNominatim(
         query: String,
         destination: String,
+        category: PlaceSearchCategory,
         limit: Int
-    ): List<FreeHotelSuggestion> {
+    ): List<FreePlaceSuggestion> {
+        val categoryText = category.queryWords.firstOrNull().orEmpty()
         val variants = listOf(
-            "$query, $destination",
-            "$query hotel, $destination",
+            listOf(query, categoryText, destination)
+                .filter { it.isNotBlank() }.joinToString(", "),
+            listOf(query, destination)
+                .filter { it.isNotBlank() }.joinToString(", "),
             query
         ).distinct()
 
-        val results = mutableListOf<FreeHotelSuggestion>()
+        val results = mutableListOf<FreePlaceSuggestion>()
 
         variants.forEachIndexed { variantIndex, fullQuery ->
             val url = URL(
@@ -110,7 +215,7 @@ object FreeHotelSearch {
             readTimeout = 12_000
             setRequestProperty(
                 "User-Agent",
-                "GalFamilyTrips/3.6.2 Android"
+                "GalFamilyTrips/3.7.0 Android"
             )
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Accept-Language", "en")
@@ -134,7 +239,7 @@ object FreeHotelSearch {
     private fun parsePhoton(
         payload: String,
         prefix: String
-    ): List<FreeHotelSuggestion> {
+    ): List<FreePlaceSuggestion> {
         val root = runCatching { JSONObject(payload) }.getOrNull()
             ?: return emptyList()
         val features = root.optJSONArray("features")
@@ -167,7 +272,7 @@ object FreeHotelSearch {
                 ).ifBlank { name }
 
                 add(
-                    FreeHotelSuggestion(
+                    FreePlaceSuggestion(
                         id = "$prefix-${properties.optString("osm_type")}-" +
                             "${properties.optString("osm_id")}-$index",
                         name = name,
@@ -178,7 +283,11 @@ object FreeHotelSearch {
                         longitude = coordinates
                             ?.optDouble(0)
                             ?.takeUnless(Double::isNaN),
-                        source = "Photon"
+                        source = "Photon",
+                        category = firstNonBlank(
+                            properties.optString("osm_value"),
+                            properties.optString("type")
+                        ).orEmpty()
                     )
                 )
             }
@@ -188,7 +297,7 @@ object FreeHotelSearch {
     private fun parseNominatim(
         payload: String,
         prefix: String
-    ): List<FreeHotelSuggestion> {
+    ): List<FreePlaceSuggestion> {
         val array = runCatching { JSONArray(payload) }.getOrNull()
             ?: return emptyList()
 
@@ -200,19 +309,22 @@ object FreeHotelSearch {
 
                 val name = firstNonBlank(
                     item.optString("name"),
-                    addressObject?.optString("hotel").orEmpty(),
                     displayName.substringBefore(",")
                 ) ?: continue
 
                 add(
-                    FreeHotelSuggestion(
+                    FreePlaceSuggestion(
                         id = "$prefix-${item.optString("osm_type")}-" +
                             "${item.optString("osm_id")}-$index",
                         name = name,
                         address = displayName.ifBlank { name },
                         latitude = item.optString("lat").toDoubleOrNull(),
                         longitude = item.optString("lon").toDoubleOrNull(),
-                        source = "Nominatim"
+                        source = "Nominatim",
+                        category = firstNonBlank(
+                            item.optString("type"),
+                            item.optString("category")
+                        ).orEmpty()
                     )
                 )
             }
@@ -222,9 +334,10 @@ object FreeHotelSearch {
     private fun rankAndMerge(
         query: String,
         destination: String,
-        results: List<FreeHotelSuggestion>,
+        category: PlaceSearchCategory,
+        results: List<FreePlaceSuggestion>,
         limit: Int
-    ): List<FreeHotelSuggestion> {
+    ): List<FreePlaceSuggestion> {
         val queryTokens = tokenize(query)
         val destinationTokens = tokenize(destination)
 
@@ -234,35 +347,30 @@ object FreeHotelSearch {
                     "${it.latitude}|${it.longitude}"
             }
             .map { suggestion ->
+                val normalizedName = normalize(suggestion.name)
                 val combined = normalize(
-                    "${suggestion.name} ${suggestion.address}"
+                    "${suggestion.name} ${suggestion.address} ${suggestion.category}"
                 )
                 var score = 0
 
                 queryTokens.forEach { token ->
-                    if (normalize(suggestion.name).contains(token)) score += 18
+                    if (normalizedName.contains(token)) score += 20
                     if (combined.contains(token)) score += 8
                 }
 
                 destinationTokens.forEach { token ->
-                    if (combined.contains(token)) score += 4
+                    if (combined.contains(token)) score += 5
+                }
+
+                category.rankingWords.forEach { word ->
+                    if (combined.contains(normalize(word))) score += 7
                 }
 
                 if (
-                    listOf(
-                        "hotel",
-                        "hostel",
-                        "motel",
-                        "resort",
-                        "inn",
-                        "apart",
-                        "suite",
-                        "lodge",
-                        "guest",
-                        "מלון"
-                    ).any { combined.contains(it) }
+                    suggestion.latitude != null &&
+                    suggestion.longitude != null
                 ) {
-                    score += 8
+                    score += 2
                 }
 
                 suggestion to score
@@ -293,4 +401,25 @@ object FreeHotelSearch {
             .filter { it.isNotBlank() }
             .distinct()
             .joinToString(", ")
+}
+
+fun freePlaceMapsUrl(
+    suggestion: FreePlaceSuggestion
+): String {
+    return if (
+        suggestion.latitude != null &&
+        suggestion.longitude != null
+    ) {
+        "https://www.google.com/maps/search/?api=1&query=" +
+            Uri.encode(
+                "${suggestion.latitude},${suggestion.longitude}"
+            )
+    } else {
+        "https://www.google.com/maps/search/?api=1&query=" +
+            Uri.encode(
+                listOf(suggestion.name, suggestion.address)
+                    .filter { it.isNotBlank() }
+                    .joinToString(", ")
+            )
+    }
 }
