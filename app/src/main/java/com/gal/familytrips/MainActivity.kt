@@ -49,6 +49,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -1392,8 +1393,17 @@ private fun DayDetailScreen(
     var draggingActivityId by remember(day.id) {
         mutableStateOf<String?>(null)
     }
+    var dragStartIndex by remember(day.id) {
+        mutableStateOf(-1)
+    }
+    var dragTargetIndex by remember(day.id) {
+        mutableStateOf(-1)
+    }
     var dragOffsetY by remember(day.id) {
         mutableStateOf(0f)
+    }
+    var draggedItemSizePx by remember(day.id) {
+        mutableStateOf(0)
     }
     val timelineListState = rememberLazyListState()
     val timelineScope = rememberCoroutineScope()
@@ -1409,16 +1419,32 @@ private fun DayDetailScreen(
         }
     }
 
-    fun saveReorderedActivities() {
-        val recalculated = recalculateActivityTimes(
-            orderedActivities.toList()
-        )
-        orderedActivities.clear()
-        orderedActivities.addAll(recalculated)
+    fun commitDraggedActivity() {
+        val fromIndex = dragStartIndex
+        val toIndex = dragTargetIndex
 
-        val updatedDay = day.copy(
-            activities = recalculated
+        if (
+            fromIndex !in orderedActivities.indices ||
+            toIndex !in orderedActivities.indices
+        ) {
+            return
+        }
+
+        val reordered = orderedActivities.toMutableList()
+        if (fromIndex != toIndex) {
+            val moved = reordered.removeAt(fromIndex)
+            reordered.add(toIndex, moved)
+        }
+
+        val updatedDay = validateAndNormalizeDayTimeline(
+            day.copy(
+                activities = reordered
+            )
         )
+
+        orderedActivities.clear()
+        orderedActivities.addAll(updatedDay.activities)
+
         onTripChange(
             trip.copy(
                 days = trip.days.map {
@@ -1426,6 +1452,14 @@ private fun DayDetailScreen(
                 }
             )
         )
+    }
+
+    fun resetDragState() {
+        draggingActivityId = null
+        dragStartIndex = -1
+        dragTargetIndex = -1
+        dragOffsetY = 0f
+        draggedItemSizePx = 0
     }
 
     Column(
@@ -1553,22 +1587,48 @@ private fun DayDetailScreen(
                 )
 
                 val isDragging = draggingActivityId == activity.id
+                val previewShiftPx = when {
+                    draggingActivityId == null ||
+                        dragStartIndex < 0 ||
+                        dragTargetIndex < 0 ||
+                        draggedItemSizePx <= 0 -> 0
+
+                    dragTargetIndex > dragStartIndex &&
+                        index in (dragStartIndex + 1)..dragTargetIndex ->
+                        -draggedItemSizePx
+
+                    dragTargetIndex < dragStartIndex &&
+                        index in dragTargetIndex until dragStartIndex ->
+                        draggedItemSizePx
+
+                    else -> 0
+                }
 
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .zIndex(if (isDragging) 10f else 0f)
                         .offset {
                             androidx.compose.ui.unit.IntOffset(
                                 x = 0,
-                                y = if (isDragging) dragOffsetY.toInt() else 0
+                                y = if (isDragging) {
+                                    dragOffsetY.toInt()
+                                } else {
+                                    previewShiftPx
+                                }
                             )
                         },
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (activity.completed) SoftMint else CardWhite
                     ),
-                    border = BorderStroke(1.dp, Color(0xFFE3E9F0)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    border = BorderStroke(
+                        if (isDragging) 2.dp else 1.dp,
+                        if (isDragging) Sky else Color(0xFFE3E9F0)
+                    ),
+                    elevation = CardDefaults.cardElevation(
+                        defaultElevation = if (isDragging) 12.dp else 2.dp
+                    )
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
@@ -1582,8 +1642,25 @@ private fun DayDetailScreen(
                                 activityId = activity.id,
                                 isDragging = isDragging,
                                 onDragStart = {
+                                    val startIndex =
+                                        orderedActivities.indexOfFirst {
+                                            it.id == activity.id
+                                        }
+
                                     draggingActivityId = activity.id
+                                    dragStartIndex = startIndex
+                                    dragTargetIndex = startIndex
                                     dragOffsetY = 0f
+
+                                    val visibleItem =
+                                        timelineListState.layoutInfo
+                                            .visibleItemsInfo
+                                            .firstOrNull {
+                                                it.key == activity.id
+                                            }
+
+                                    draggedItemSizePx =
+                                        visibleItem?.size ?: 140
                                 },
                                 onDrag = { deltaY ->
                                     if (draggingActivityId != activity.id) {
@@ -1592,78 +1669,148 @@ private fun DayDetailScreen(
 
                                     dragOffsetY += deltaY
 
-                                    timelineScope.launch {
-                                        val visibleItems = timelineListState
-                                            .layoutInfo
-                                            .visibleItemsInfo
-                                        val firstVisibleIndex =
-                                            visibleItems.firstOrNull()?.index
-                                        val lastVisibleIndex =
-                                            visibleItems.lastOrNull()?.index
-                                        val currentListIndex =
-                                            orderedActivities.indexOfFirst {
-                                                it.id == activity.id
+                                    val layoutInfo =
+                                        timelineListState.layoutInfo
+                                    val draggedInfo =
+                                        layoutInfo.visibleItemsInfo
+                                            .firstOrNull {
+                                                it.key == activity.id
                                             }
 
-                                        val nearBottom =
-                                            deltaY > 0 &&
-                                                lastVisibleIndex != null &&
-                                                currentListIndex >=
-                                                lastVisibleIndex - 1
-                                        val nearTop =
-                                            deltaY < 0 &&
-                                                firstVisibleIndex != null &&
-                                                currentListIndex <=
-                                                firstVisibleIndex + 1
+                                    val baseTop =
+                                        draggedInfo?.offset
+                                            ?: layoutInfo.viewportStartOffset
+                                    val itemSize =
+                                        draggedInfo?.size
+                                            ?: draggedItemSizePx
+                                                .coerceAtLeast(140)
 
-                                        if (nearBottom || nearTop) {
-                                            timelineListState.scrollBy(
-                                                deltaY * 1.8f
-                                            )
+                                    draggedItemSizePx = itemSize
+
+                                    val draggedCenter =
+                                        baseTop +
+                                            dragOffsetY +
+                                            itemSize / 2f
+
+                                    val closestVisible =
+                                        layoutInfo.visibleItemsInfo
+                                            .filter {
+                                                orderedActivities.any { item ->
+                                                    item.id == it.key
+                                                }
+                                            }
+                                            .minByOrNull { info ->
+                                                kotlin.math.abs(
+                                                    draggedCenter -
+                                                        (
+                                                            info.offset +
+                                                                info.size / 2f
+                                                        )
+                                                )
+                                            }
+
+                                    closestVisible?.let { info ->
+                                        val candidateIndex =
+                                            orderedActivities.indexOfFirst {
+                                                it.id == info.key
+                                            }
+                                        if (
+                                            candidateIndex in
+                                                orderedActivities.indices
+                                        ) {
+                                            dragTargetIndex =
+                                                candidateIndex
                                         }
                                     }
 
-                                    val currentIndex = orderedActivities
-                                        .indexOfFirst { it.id == activity.id }
+                                    val topEdge =
+                                        layoutInfo.viewportStartOffset + 90
+                                    val bottomEdge =
+                                        layoutInfo.viewportEndOffset - 90
 
-                                    if (currentIndex < 0) {
-                                        return@ActivityDragHandle
+                                    val scrollAmount = when {
+                                        draggedCenter > bottomEdge ->
+                                            (
+                                                draggedCenter -
+                                                    bottomEdge
+                                                )
+                                                .coerceAtMost(34f)
+
+                                        draggedCenter < topEdge ->
+                                            -(
+                                                topEdge -
+                                                    draggedCenter
+                                                )
+                                                .coerceAtMost(34f)
+
+                                        else -> 0f
                                     }
 
-                                    val itemStepPx = 92f
+                                    if (scrollAmount != 0f) {
+                                        timelineScope.launch {
+                                            val consumed =
+                                                timelineListState.scrollBy(
+                                                    scrollAmount
+                                                )
 
-                                    while (
-                                        dragOffsetY > itemStepPx &&
-                                        currentIndex < orderedActivities.lastIndex
-                                    ) {
-                                        val liveIndex = orderedActivities
-                                            .indexOfFirst { it.id == activity.id }
-                                        if (liveIndex >= orderedActivities.lastIndex) break
+                                            // Keep the card under the finger while
+                                            // the list itself scrolls.
+                                            dragOffsetY += consumed
 
-                                        val moved = orderedActivities.removeAt(liveIndex)
-                                        orderedActivities.add(liveIndex + 1, moved)
-                                        dragOffsetY -= itemStepPx
-                                    }
+                                            val refreshed =
+                                                timelineListState.layoutInfo
+                                            val lastVisibleActivity =
+                                                refreshed.visibleItemsInfo
+                                                    .lastOrNull {
+                                                        orderedActivities.any {
+                                                            item ->
+                                                            item.id == it.key
+                                                        }
+                                                    }
+                                            val firstVisibleActivity =
+                                                refreshed.visibleItemsInfo
+                                                    .firstOrNull {
+                                                        orderedActivities.any {
+                                                            item ->
+                                                            item.id == it.key
+                                                        }
+                                                    }
 
-                                    while (
-                                        dragOffsetY < -itemStepPx &&
-                                        orderedActivities.indexOfFirst {
-                                            it.id == activity.id
-                                        } > 0
-                                    ) {
-                                        val liveIndex = orderedActivities
-                                            .indexOfFirst { it.id == activity.id }
-                                        if (liveIndex <= 0) break
-
-                                        val moved = orderedActivities.removeAt(liveIndex)
-                                        orderedActivities.add(liveIndex - 1, moved)
-                                        dragOffsetY += itemStepPx
+                                            if (scrollAmount > 0) {
+                                                lastVisibleActivity?.let {
+                                                    val target =
+                                                        orderedActivities
+                                                            .indexOfFirst {
+                                                                item ->
+                                                                item.id ==
+                                                                    it.key
+                                                            }
+                                                    if (target >= 0) {
+                                                        dragTargetIndex =
+                                                            target
+                                                    }
+                                                }
+                                            } else {
+                                                firstVisibleActivity?.let {
+                                                    val target =
+                                                        orderedActivities
+                                                            .indexOfFirst {
+                                                                item ->
+                                                                item.id ==
+                                                                    it.key
+                                                            }
+                                                    if (target >= 0) {
+                                                        dragTargetIndex =
+                                                            target
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 },
                                 onDragEnd = {
-                                    draggingActivityId = null
-                                    dragOffsetY = 0f
-                                    saveReorderedActivities()
+                                    commitDraggedActivity()
+                                    resetDragState()
                                 }
                             )
 
@@ -1882,13 +2029,32 @@ private fun DayDetailScreen(
 
                             IconButton(
                                 onClick = {
-                                    val updatedDay = day.copy(
-                                        activities = day.activities.filterNot { it.id == activity.id }
+                                    val remainingActivities =
+                                        orderedActivities.filterNot {
+                                            it.id == activity.id
+                                        }
+
+                                    val updatedDay =
+                                        validateAndNormalizeDayTimeline(
+                                            day.copy(
+                                                activities =
+                                                    remainingActivities
+                                            )
+                                        )
+
+                                    orderedActivities.clear()
+                                    orderedActivities.addAll(
+                                        updatedDay.activities
                                     )
+
                                     onTripChange(
                                         trip.copy(
                                             days = trip.days.map {
-                                                if (it.id == day.id) updatedDay else it
+                                                if (it.id == day.id) {
+                                                    updatedDay
+                                                } else {
+                                                    it
+                                                }
                                             }
                                         )
                                     )
@@ -1932,14 +2098,16 @@ private fun DayDetailScreen(
             onDismiss = { showLiveMap = false },
             onOpenUrl = onOpenUrl,
             onCompleteActivity = { activityId ->
-                val updatedDay = day.copy(
-                    activities = day.activities.map {
-                        if (it.id == activityId) {
-                            it.copy(completed = true)
-                        } else {
-                            it
+                val updatedDay = validateAndNormalizeDayTimeline(
+                    day.copy(
+                        activities = day.activities.map {
+                            if (it.id == activityId) {
+                                it.copy(completed = true)
+                            } else {
+                                it
+                            }
                         }
-                    }
+                    )
                 )
 
                 onTripChange(
@@ -1978,12 +2146,10 @@ private fun DayDetailScreen(
                 val updatedActivities = orderedActivities.toMutableList()
                 updatedActivities.add(targetIndex, activity)
 
-                val recalculated = recalculateActivityTimes(
-                    updatedActivities
-                )
-
-                val updatedDay = day.copy(
-                    activities = recalculated
+                val updatedDay = validateAndNormalizeDayTimeline(
+                    day.copy(
+                        activities = updatedActivities
+                    )
                 )
                 onTripChange(
                     trip.copy(
@@ -2007,20 +2173,40 @@ private fun DayDetailScreen(
             onConfirm = { targetDayId ->
                 val updatedDays = trip.days.map { tripDay ->
                     when (tripDay.id) {
-                        day.id -> tripDay.copy(
-                            activities = tripDay.activities.filterNot {
-                                it.id == activity.id
-                            }
-                        )
-                        targetDayId -> tripDay.copy(
-                            activities = tripDay.activities + activity.copy(
-                                completed = false
+                        day.id -> {
+                            validateAndNormalizeDayTimeline(
+                                tripDay.copy(
+                                    activities =
+                                        tripDay.activities.filterNot {
+                                            it.id == activity.id
+                                        }
+                                )
                             )
-                        )
+                        }
+
+                        targetDayId -> {
+                            validateAndNormalizeDayTimeline(
+                                tripDay.copy(
+                                    activities =
+                                        tripDay.activities +
+                                            activity.copy(
+                                                completed = false
+                                            )
+                                )
+                            )
+                        }
+
                         else -> tripDay
                     }
                 }
-                onTripChange(trip.copy(days = updatedDays))
+
+                onTripChange(
+                    trip.copy(
+                        days = validateAndNormalizeTripDays(
+                            updatedDays
+                        )
+                    )
+                )
                 movingActivity = null
             }
         )
@@ -2036,8 +2222,10 @@ private fun DayDetailScreen(
                     .coerceIn(0, orderedActivities.size)
                 val updatedActivities = orderedActivities.toMutableList()
                 updatedActivities.add(targetIndex, activity)
-                val updatedDay = day.copy(
-                    activities = recalculateActivityTimes(updatedActivities)
+                val updatedDay = validateAndNormalizeDayTimeline(
+                    day.copy(
+                        activities = updatedActivities
+                    )
                 )
                 onTripChange(
                     trip.copy(
@@ -2061,8 +2249,10 @@ private fun DayDetailScreen(
                 val editedActivities = day.activities.map {
                     if (it.id == updated.id) updated else it
                 }
-                val updatedDay = day.copy(
-                    activities = recalculateActivityTimes(editedActivities)
+                val updatedDay = validateAndNormalizeDayTimeline(
+                    day.copy(
+                        activities = editedActivities
+                    )
                 )
                 onTripChange(
                     trip.copy(
@@ -3237,32 +3427,68 @@ private fun nextSuggestedTime(day: TripDay): String {
     return minutesToClock(end)
 }
 
+private fun validateAndNormalizeDayTimeline(
+    day: TripDay
+): TripDay {
+    return day.copy(
+        activities = recalculateActivityTimes(day.activities)
+    )
+}
+
+private fun validateAndNormalizeTripDays(
+    days: List<TripDay>
+): List<TripDay> {
+    return days.map(::validateAndNormalizeDayTimeline)
+}
+
 private fun recalculateActivityTimes(
     activities: List<ActivityItem>
 ): List<ActivityItem> {
     if (activities.isEmpty()) return emptyList()
 
-    var cursor = activityTimeMinutes(activities.first().time)
+    // שעת תחילת היום אינה שייכת לפעילות מסוימת.
+    // אחרי גרירה הפעילות שעולה למקום הראשון צריכה לקבל
+    // את שעת ההתחלה המוקדמת ביותר שהייתה בציר הזמן.
+    val timelineStart = activities
+        .mapNotNull { activityTimeMinutes(it.time) }
+        .minOrNull()
         ?: 9 * 60
 
-    return activities.mapIndexed { index, activity ->
-        val originalStart = activityTimeMinutes(activity.time)
-        val fixed = isFixedScheduleActivity(activity)
+    var cursor = timelineStart
 
-        val start = when {
-            index == 0 -> originalStart ?: cursor
-            fixed && originalStart != null -> originalStart
-            else -> cursor
+    return activities.map { activity ->
+        val originalStart =
+            activityTimeMinutes(activity.time)
+        val fixed =
+            isFixedScheduleActivity(activity)
+
+        val normalizedActivity = when {
+            fixed && originalStart != null -> {
+                // פעילות קבועה שומרת את השעה שלה.
+                activity.copy(
+                    time = minutesToClock(originalStart)
+                )
+            }
+
+            else -> {
+                // כל פעילות גמישה מתחילה בדיוק בסיום הקודמת,
+                // גם אם בעקבות גרירה היא עברה למקום מוקדם יותר.
+                activity.copy(
+                    time = minutesToClock(cursor)
+                )
+            }
         }
 
-        val updated = if (fixed) {
-            activity
-        } else {
-            activity.copy(time = minutesToClock(start))
-        }
+        val effectiveStart =
+            activityTimeMinutes(normalizedActivity.time)
+                ?: cursor
 
-        cursor = start + activityDurationMinutes(activity.duration)
-        updated
+        cursor = effectiveStart +
+            activityDurationMinutes(
+                normalizedActivity.duration
+            )
+
+        normalizedActivity
     }
 }
 
