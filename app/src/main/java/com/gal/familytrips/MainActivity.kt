@@ -3524,9 +3524,10 @@ private fun HotelSkeletonEditorDialog(
     onDismiss: () -> Unit,
     onConfirm: (Hotel) -> Unit
 ) {
-    val context = LocalContext.current
-
     var name by remember(hotel?.id) {
+        mutableStateOf(hotel?.name.orEmpty())
+    }
+    var searchText by remember(hotel?.id) {
         mutableStateOf(hotel?.name.orEmpty())
     }
     var checkIn by remember(hotel?.id) {
@@ -3538,13 +3539,17 @@ private fun HotelSkeletonEditorDialog(
     var address by remember(hotel?.id) {
         mutableStateOf(hotel?.address.orEmpty())
     }
+    var mapsUrl by remember(hotel?.id) {
+        mutableStateOf(hotel?.mapsUrl.orEmpty())
+    }
     var selectedSuggestionId by remember(hotel?.id) {
         mutableStateOf<String?>(null)
     }
-    var hotelSuggestions by remember {
-        mutableStateOf<List<SmartPlaceSuggestion>>(emptyList())
+    var suggestions by remember {
+        mutableStateOf<List<FreeHotelSuggestion>>(emptyList())
     }
-    var searchingHotel by remember { mutableStateOf(false) }
+    var searching by remember { mutableStateOf(false) }
+    var searchMessage by remember { mutableStateOf<String?>(null) }
 
     var boardBasis by remember(hotel?.id) {
         mutableStateOf(hotel?.boardBasis ?: "לינה בלבד")
@@ -3574,34 +3579,63 @@ private fun HotelSkeletonEditorDialog(
         "פנסיון מלא"
     )
 
-    LaunchedEffect(
-        name,
-        trip.destination,
+    val destinationForSearch = remember(
+        checkIn,
+        trip.destinationStays,
         trip.destinationStops,
+        trip.destination
+    ) {
+        trip.destinationStays
+            .firstOrNull { stay ->
+                runCatching {
+                    val date = LocalDate.parse(checkIn)
+                    val start = LocalDate.parse(stay.startDate)
+                    val end = LocalDate.parse(stay.endDate)
+                    !date.isBefore(start) && !date.isAfter(end)
+                }.getOrDefault(false)
+            }
+            ?.destination
+            ?: trip.destinationStops.firstOrNull()
+            ?: trip.destination
+    }
+
+    LaunchedEffect(
+        searchText,
+        destinationForSearch,
         trip.offlineMode
     ) {
-        hotelSuggestions = emptyList()
+        suggestions = emptyList()
+        searchMessage = null
 
-        val query = name.trim()
-        if (
-            query.length < 3 ||
-            trip.offlineMode ||
-            query == hotel?.name
-        ) {
-            searchingHotel = false
+        val query = searchText.trim()
+
+        if (trip.offlineMode) {
+            searching = false
+            searchMessage =
+                "במצב אופליין ניתן להזין את שם המלון והכתובת ידנית."
             return@LaunchedEffect
         }
 
-        delay(700)
-        searchingHotel = true
-        hotelSuggestions = AndroidPlaceSearch.search(
-            context = context,
-            query = "$query hotel",
-            destinationContext = trip.destinationStops
-                .firstOrNull()
-                ?: trip.destination
+        if (query.length < 3 || query == hotel?.name) {
+            searching = false
+            return@LaunchedEffect
+        }
+
+        delay(650)
+        searching = true
+
+        val results = FreeHotelSearch.search(
+            query = query,
+            destination = destinationForSearch
         )
-        searchingHotel = false
+
+        suggestions = results
+        searching = false
+
+        if (results.isEmpty()) {
+            searchMessage =
+                "לא נמצאו מלונות. נסה שם באנגלית, שם קצר יותר או יעד מדויק יותר."
+        }
     }
 
     val valid = name.isNotBlank() &&
@@ -3630,34 +3664,45 @@ private fun HotelSkeletonEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 item {
+                    SectionCard(containerColor = SoftBlue) {
+                        Text(
+                            "חיפוש מלון חינמי",
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+                        Text(
+                            "החיפוש מתבצע ב-OpenStreetMap לפי היעד: $destinationForSearch",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                        Text(
+                            "לא נדרש API Key או Billing.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF2E7D56)
+                        )
+                    }
+                }
+
+                item {
                     OutlinedTextField(
-                        value = name,
+                        value = searchText,
                         onValueChange = {
-                            name = it
+                            searchText = it
                             selectedSuggestionId = null
                         },
                         label = { Text("חיפוש שם המלון") },
-                        leadingIcon = { Text("🏨") },
+                        leadingIcon = { Text("🔎") },
                         trailingIcon = {
-                            when {
-                                searchingHotel -> {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                }
-                                selectedSuggestionId != null -> {
-                                    Text("✓", color = Mint)
-                                }
+                            if (searching) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
                             }
                         },
                         supportingText = {
                             Text(
-                                if (trip.offlineMode) {
-                                    "במצב אופליין יש להזין שם וכתובת ידנית"
-                                } else {
-                                    "הקלד לפחות 3 תווים לקבלת הצעות"
-                                }
+                                "מומלץ להקליד את שם המלון באנגלית"
                             )
                         },
                         singleLine = true,
@@ -3665,23 +3710,42 @@ private fun HotelSkeletonEditorDialog(
                     )
                 }
 
-                if (hotelSuggestions.isNotEmpty()) {
+                searchMessage?.let { message ->
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = SoftSun
+                        ) {
+                            Text(
+                                message,
+                                modifier = Modifier.padding(11.dp),
+                                color = Color(0xFF7D5B00),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+
+                if (suggestions.isNotEmpty()) {
                     item {
                         Text(
-                            "תוצאות חיפוש",
+                            "תוצאות",
                             fontWeight = FontWeight.Bold
                         )
                     }
 
                     items(
-                        hotelSuggestions,
+                        suggestions,
                         key = { it.id }
                     ) { suggestion ->
                         Surface(
                             onClick = {
                                 selectedSuggestionId = suggestion.id
-                                name = suggestion.title
+                                name = suggestion.name
+                                searchText = suggestion.name
                                 address = suggestion.address
+                                mapsUrl = buildFreeMapsUrl(suggestion)
+                                searchMessage = null
                             },
                             shape = RoundedCornerShape(14.dp),
                             color = if (
@@ -3706,11 +3770,11 @@ private fun HotelSkeletonEditorDialog(
                                     .padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("📍")
+                                Text("🏨")
                                 Spacer(Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        suggestion.title,
+                                        suggestion.name,
                                         fontWeight = FontWeight.Bold,
                                         color = Navy
                                     )
@@ -3721,10 +3785,15 @@ private fun HotelSkeletonEditorDialog(
                                         maxLines = 2
                                     )
                                 }
+
                                 if (
                                     selectedSuggestionId == suggestion.id
                                 ) {
-                                    Text("✓", color = Mint)
+                                    Text(
+                                        "✓",
+                                        color = Color(0xFF2E7D56),
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }
@@ -3733,14 +3802,31 @@ private fun HotelSkeletonEditorDialog(
 
                 item {
                     OutlinedTextField(
+                        value = name,
+                        onValueChange = {
+                            name = it
+                            selectedSuggestionId = null
+                            mapsUrl = ""
+                        },
+                        label = { Text("שם המלון") },
+                        supportingText = {
+                            Text("מתמלא אוטומטית לאחר בחירת תוצאה")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
                         value = address,
                         onValueChange = {
                             address = it
                             selectedSuggestionId = null
+                            mapsUrl = ""
                         },
                         label = { Text("כתובת המלון") },
                         supportingText = {
-                            Text("מתמלא אוטומטית לאחר בחירת תוצאה")
+                            Text("ניתן לתקן את הכתובת ידנית")
                         },
                         maxLines = 2,
                         modifier = Modifier.fillMaxWidth()
@@ -3843,9 +3929,7 @@ private fun HotelSkeletonEditorDialog(
                             OutlinedTextField(
                                 value = transferFrom,
                                 onValueChange = { transferFrom = it },
-                                label = {
-                                    Text("נקודת איסוף")
-                                },
+                                label = { Text("נקודת איסוף") },
                                 supportingText = {
                                     Text(
                                         "לדוגמה: שדה התעופה או תחנת הרכבת"
@@ -3857,9 +3941,7 @@ private fun HotelSkeletonEditorDialog(
                             OutlinedTextField(
                                 value = transferTime,
                                 onValueChange = { transferTime = it },
-                                label = {
-                                    Text("שעת ההסעה HH:mm")
-                                },
+                                label = { Text("שעת ההסעה HH:mm") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -3870,9 +3952,7 @@ private fun HotelSkeletonEditorDialog(
                                     transferMinutesText =
                                         it.filter(Char::isDigit)
                                 },
-                                label = {
-                                    Text("זמן נסיעה בדקות")
-                                },
+                                label = { Text("זמן נסיעה בדקות") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -3914,10 +3994,10 @@ private fun HotelSkeletonEditorDialog(
             TextButton(
                 enabled = valid,
                 onClick = {
-                    val mapsUrl = hotel?.mapsUrl
-                        ?.takeIf { it.isNotBlank() }
-                        ?: "https://www.google.com/maps/search/?api=1&query=" +
+                    val finalMapsUrl = mapsUrl.ifBlank {
+                        "https://www.google.com/maps/search/?api=1&query=" +
                             Uri.encode(address.ifBlank { name })
+                    }
 
                     onConfirm(
                         Hotel(
@@ -3927,7 +4007,7 @@ private fun HotelSkeletonEditorDialog(
                             checkIn = checkIn,
                             checkOut = checkOut,
                             address = address.trim(),
-                            mapsUrl = mapsUrl,
+                            mapsUrl = finalMapsUrl,
                             notes = notes.trim(),
                             boardBasis = boardBasis,
                             includeTransfer = includeTransfer,
@@ -3950,6 +4030,30 @@ private fun HotelSkeletonEditorDialog(
             }
         }
     )
+}
+
+private fun buildFreeMapsUrl(
+    suggestion: FreeHotelSuggestion
+): String {
+    return if (
+        suggestion.latitude != null &&
+        suggestion.longitude != null
+    ) {
+        "https://www.google.com/maps/search/?api=1&query=" +
+            Uri.encode(
+                "${suggestion.latitude},${suggestion.longitude}"
+            )
+    } else {
+        "https://www.google.com/maps/search/?api=1&query=" +
+            Uri.encode(
+                listOf(
+                    suggestion.name,
+                    suggestion.address
+                )
+                    .filter { it.isNotBlank() }
+                    .joinToString(", ")
+            )
+    }
 }
 
 private fun isValidHotelTransferTime(value: String): Boolean =

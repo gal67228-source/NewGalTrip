@@ -13,8 +13,8 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 32
-        versionName '3.5.0-today-hotel-checkin-checkout'
+        versionCode 35
+        versionName '3.6.1-free-osm-hotel-search'
     }
 
     buildFeatures {

@@ -362,39 +362,81 @@ fun TodayScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(11.dp),
+                        .padding(horizontal = 12.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (activity.completed) {
-                                    Color(0xFFD9F3E4)
-                                } else {
-                                    SoftBlue
-                                }
-                            ),
-                        contentAlignment = Alignment.Center
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (activity.completed) {
+                            Color(0xFFD9F3E4)
+                        } else {
+                            SoftBlue
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (activity.completed) {
+                                Color(0xFFBFE5D0)
+                            } else {
+                                Color(0xFFD6E6F8)
+                            }
+                        )
                     ) {
-                        Text(if (activity.completed) "✓" else activity.time)
+                        Text(
+                            text = activity.time.ifBlank { "--:--" },
+                            modifier = Modifier.padding(
+                                horizontal = 10.dp,
+                                vertical = 7.dp
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (activity.completed) {
+                                Color(0xFF2E7D56)
+                            } else {
+                                Sky
+                            },
+                            maxLines = 1
+                        )
                     }
 
                     Spacer(Modifier.width(10.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            activity.name,
-                            fontWeight = FontWeight.Bold,
-                            color = Navy
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                activity.name,
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.Bold,
+                                color = Navy,
+                                maxLines = 2
+                            )
+
+                            if (activity.completed) {
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFFD9F3E4)
+                                ) {
+                                    Text(
+                                        "✓",
+                                        modifier = Modifier.padding(
+                                            horizontal = 8.dp,
+                                            vertical = 4.dp
+                                        ),
+                                        color = Color(0xFF2E7D56),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
                         if (activity.location.isNotBlank()) {
                             Text(
                                 activity.location,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = TextSecondary,
-                                maxLines = 1
+                                maxLines = 2
                             )
                         }
                     }
