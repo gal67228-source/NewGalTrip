@@ -16,7 +16,12 @@ data class ActivityItem(
     val notes: String = "",
     val mapsUrl: String = "",
     val completed: Boolean = false,
-    val fixedTime: Boolean = false
+    val fixedTime: Boolean = false,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val transitionMode: String = "auto",
+    val transitionMinutes: Int = 0,
+    val transitionAutomatic: Boolean = true
 )
 
 @Serializable

@@ -13,8 +13,8 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 46
-        versionName '3.8.6-duplicate-time-fix'
+        versionCode 50
+        versionName '4.0.0-transition-times'
     }
 
     buildFeatures {

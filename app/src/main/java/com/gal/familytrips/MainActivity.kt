@@ -1574,6 +1574,17 @@ private fun DayDetailScreen(
                 items = orderedActivities,
                 key = { _, item -> item.id }
             ) { index, activity ->
+                if (index > 0) {
+                    TransitionTimeCard(
+                        previous = orderedActivities[index - 1],
+                        current = activity,
+                        onEdit = {
+                            editingActivity = activity
+                        },
+                        onOpenUrl = onOpenUrl
+                    )
+                }
+
                 TimelineInsertButton(
                     label = if (index == 0) {
                         "הוסף בתחילת היום"
@@ -1992,7 +2003,9 @@ private fun DayDetailScreen(
                                             insertIndex
                                         ),
                                         completed = false,
-                                        fixedTime = false
+                                        fixedTime = false,
+                                        transitionAutomatic = true,
+                                        transitionMinutes = 0
                                     )
 
                                     val updatedActivities =
@@ -2294,6 +2307,90 @@ private fun DayDetailScreen(
     }
 }
 
+
+
+@Composable
+private fun TransitionTimeCard(
+    previous: ActivityItem,
+    current: ActivityItem,
+    onEdit: () -> Unit,
+    onOpenUrl: (String) -> Unit
+) {
+    val minutes = current.transitionMinutes.coerceAtLeast(0)
+    val mode = resolvedTransitionMode(previous, current)
+    val icon = transitionModeIcon(mode)
+    val label = transitionModeLabel(mode)
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = SoftAqua,
+        border = BorderStroke(1.dp, Color(0xFFCFE8E8))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                icon,
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Spacer(Modifier.width(8.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (minutes == 0) {
+                        "ללא זמן מעבר"
+                    } else {
+                        "$minutes דקות מעבר"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+                Text(
+                    "$label · ${previous.name} ← ${current.name}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                    maxLines = 1
+                )
+            }
+
+            IconButton(
+                onClick = {
+                    val origin = previous.location
+                        .ifBlank { previous.name }
+                    val destination = current.location
+                        .ifBlank { current.name }
+
+                    val travelMode = when (mode) {
+                        "walk" -> "walking"
+                        "drive" -> "driving"
+                        else -> "transit"
+                    }
+
+                    onOpenUrl(
+                        "https://www.google.com/maps/dir/?api=1" +
+                            "&origin=${Uri.encode(origin)}" +
+                            "&destination=${Uri.encode(destination)}" +
+                            "&travelmode=$travelMode"
+                    )
+                },
+                modifier = Modifier.size(38.dp)
+            ) {
+                GoogleMapsBrandIcon(Modifier.size(29.dp))
+            }
+
+            IconButton(
+                onClick = onEdit,
+                modifier = Modifier.size(36.dp)
+            ) {
+                SmallEditIcon(Modifier.size(27.dp))
+            }
+        }
+    }
+}
 
 @Composable
 private fun ActivityTimePickerField(
@@ -2838,6 +2935,11 @@ private fun QuickActivityDialog(
     var name by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
     var duration by remember { mutableStateOf(selectedPreset.duration) }
+    var transitionMode by remember { mutableStateOf("auto") }
+    var transitionAutomatic by remember { mutableStateOf(true) }
+    var transitionMinutesText by remember { mutableStateOf("0") }
+    var selectedLatitude by remember { mutableStateOf<Double?>(null) }
+    var selectedLongitude by remember { mutableStateOf<Double?>(null) }
     var selectedSuggestionId by remember { mutableStateOf<String?>(null) }
     var placeSuggestions by remember {
         mutableStateOf<List<FreePlaceSuggestion>>(emptyList())
@@ -2973,6 +3075,8 @@ private fun QuickActivityDialog(
         duration = preset.duration
         fixedTime = preset.key in listOf("flight", "train")
         selectedSuggestionId = null
+        selectedLatitude = null
+        selectedLongitude = null
         placeSuggestions = emptyList()
     }
 
@@ -2980,6 +3084,8 @@ private fun QuickActivityDialog(
         selectedSuggestionId = suggestion.id
         name = suggestion.name
         location = suggestion.address.ifBlank { suggestion.name }
+        selectedLatitude = suggestion.latitude
+        selectedLongitude = suggestion.longitude
     }
 
     AlertDialog(
@@ -3319,6 +3425,77 @@ private fun QuickActivityDialog(
                     )
                 }
 
+                if (previousActivity != null) {
+                    item {
+                        SectionCard(
+                            containerColor = SoftAqua
+                        ) {
+                            Text(
+                                "זמן מעבר מהפעילות הקודמת",
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "auto" to "אוטומטי",
+                                    "walk" to "הליכה",
+                                    "transit" to "תחבורה",
+                                    "drive" to "רכב"
+                                ).forEach { (value, title) ->
+                                    FilterChip(
+                                        selected = transitionMode == value,
+                                        onClick = {
+                                            transitionMode = value
+                                            transitionAutomatic = true
+                                        },
+                                        label = { Text(title) }
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "חישוב אוטומטי",
+                                    modifier = Modifier.weight(1f),
+                                    color = TextSecondary
+                                )
+                                Switch(
+                                    checked = transitionAutomatic,
+                                    onCheckedChange = {
+                                        transitionAutomatic = it
+                                    }
+                                )
+                            }
+
+                            if (!transitionAutomatic) {
+                                OutlinedTextField(
+                                    value = transitionMinutesText,
+                                    onValueChange = {
+                                        transitionMinutesText =
+                                            it.filter(Char::isDigit)
+                                    },
+                                    label = { Text("דקות מעבר") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                Text(
+                                    "הזמן יחושב לפי המרחק ואמצעי המעבר.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+
                 item {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
@@ -3419,7 +3596,16 @@ private fun QuickActivityDialog(
                             notes = selectedPreset.notes,
                             mapsUrl = mapsUrl,
                             completed = false,
-                            fixedTime = fixedTime
+                            fixedTime = fixedTime,
+                            latitude = selectedLatitude,
+                            longitude = selectedLongitude,
+                            transitionMode = transitionMode,
+                            transitionMinutes =
+                                transitionMinutesText.toIntOrNull()
+                                    ?.coerceAtLeast(0)
+                                    ?: 0,
+                            transitionAutomatic =
+                                transitionAutomatic
                         )
                     )
                 }
@@ -3475,17 +3661,28 @@ private fun recalculateActivityTimes(
 ): List<ActivityItem> {
     if (activities.isEmpty()) return emptyList()
 
-    // שעת תחילת היום אינה שייכת לפעילות מסוימת.
-    // אחרי גרירה הפעילות שעולה למקום הראשון צריכה לקבל
-    // את שעת ההתחלה המוקדמת ביותר שהייתה בציר הזמן.
     val timelineStart = activities
         .mapNotNull { activityTimeMinutes(it.time) }
         .minOrNull()
         ?: 9 * 60
 
     var cursor = timelineStart
+    var previous: ActivityItem? = null
 
-    return activities.map { activity ->
+    return activities.mapIndexed { index, activity ->
+        val transition = if (index == 0 || previous == null) {
+            0
+        } else {
+            resolveTransitionMinutes(
+                previous = previous!!,
+                current = activity
+            )
+        }
+
+        if (index > 0) {
+            cursor += transition
+        }
+
         val originalStart =
             activityTimeMinutes(activity.time)
         val fixed =
@@ -3493,17 +3690,16 @@ private fun recalculateActivityTimes(
 
         val normalizedActivity = when {
             fixed && originalStart != null -> {
-                // פעילות קבועה שומרת את השעה שלה.
                 activity.copy(
-                    time = minutesToClock(originalStart)
+                    time = minutesToClock(originalStart),
+                    transitionMinutes = transition
                 )
             }
 
             else -> {
-                // כל פעילות גמישה מתחילה בדיוק בסיום הקודמת,
-                // גם אם בעקבות גרירה היא עברה למקום מוקדם יותר.
                 activity.copy(
-                    time = minutesToClock(cursor)
+                    time = minutesToClock(cursor),
+                    transitionMinutes = transition
                 )
             }
         }
@@ -3517,6 +3713,7 @@ private fun recalculateActivityTimes(
                 normalizedActivity.duration
             )
 
+        previous = normalizedActivity
         normalizedActivity
     }
 }
@@ -3573,18 +3770,29 @@ private fun findTimelineConflict(
     activities.forEach { activity ->
         val start = activityTimeMinutes(activity.time)
             ?: return@forEach
+        val transition = if (previousEnd == null) {
+            0
+        } else {
+            activity.transitionMinutes.coerceAtLeast(0)
+        }
+        val requiredStart = (previousEnd ?: start) + transition
         val end = start + activityDurationMinutes(activity.duration)
 
         val knownPreviousEnd = previousEnd
         if (
             knownPreviousEnd != null &&
-            start < knownPreviousEnd &&
+            start < requiredStart &&
             isFixedScheduleActivity(activity)
         ) {
             return buildString {
                 append(previousName)
                 append(" מסתיימת ב־")
                 append(minutesToClock(knownPreviousEnd))
+                if (transition > 0) {
+                    append(" ועוד ")
+                    append(transition)
+                    append(" דקות מעבר")
+                }
                 append(", אבל ")
                 append(activity.name)
                 append(" קבועה ל־")
@@ -3598,6 +3806,216 @@ private fun findTimelineConflict(
     }
 
     return null
+}
+
+private fun resolveTransitionMinutes(
+    previous: ActivityItem,
+    current: ActivityItem
+): Int {
+    if (!current.transitionAutomatic) {
+        return current.transitionMinutes.coerceAtLeast(0)
+    }
+
+    if (
+        previous.location.isNotBlank() &&
+        current.location.isNotBlank() &&
+        previous.location.trim().equals(
+            current.location.trim(),
+            ignoreCase = true
+        )
+    ) {
+        return 0
+    }
+
+    val previousCoordinates =
+        activityCoordinates(previous)
+    val currentCoordinates =
+        activityCoordinates(current)
+
+    val distanceKm = if (
+        previousCoordinates != null &&
+        currentCoordinates != null
+    ) {
+        haversineDistanceKm(
+            previousCoordinates.first,
+            previousCoordinates.second,
+            currentCoordinates.first,
+            currentCoordinates.second
+        )
+    } else {
+        null
+    }
+
+    val mode = resolvedTransitionMode(
+        previous,
+        current,
+        distanceKm
+    )
+
+    if (distanceKm == null) {
+        return when (mode) {
+            "walk" -> 15
+            "drive" -> 20
+            "transit" -> 25
+            else -> 15
+        }
+    }
+
+    val speedKmH = when (mode) {
+        "walk" -> 4.8
+        "drive" -> 28.0
+        "transit" -> 18.0
+        else -> 18.0
+    }
+
+    val bufferMinutes = when (mode) {
+        "walk" -> 2
+        "drive" -> 6
+        "transit" -> 8
+        else -> 5
+    }
+
+    return (
+        kotlin.math.ceil(
+            distanceKm / speedKmH * 60.0
+        ).toInt() + bufferMinutes
+    ).coerceIn(3, 180)
+}
+
+private fun resolvedTransitionMode(
+    previous: ActivityItem,
+    current: ActivityItem,
+    knownDistanceKm: Double? = null
+): String {
+    if (current.transitionMode != "auto") {
+        return current.transitionMode
+    }
+
+    val transportText = (
+        current.transport + " " +
+            current.directions
+        ).lowercase()
+
+    when {
+        listOf("walk", "walking", "הליכה", "רגל").any {
+            transportText.contains(it)
+        } -> return "walk"
+
+        listOf(
+            "car", "taxi", "drive", "רכב", "מונית"
+        ).any {
+            transportText.contains(it)
+        } -> return "drive"
+
+        listOf(
+            "bus", "train", "metro", "tram",
+            "אוטובוס", "רכבת", "מטרו", "תחבורה"
+        ).any {
+            transportText.contains(it)
+        } -> return "transit"
+    }
+
+    val distance = knownDistanceKm ?: run {
+        val previousCoordinates =
+            activityCoordinates(previous)
+        val currentCoordinates =
+            activityCoordinates(current)
+
+        if (
+            previousCoordinates != null &&
+            currentCoordinates != null
+        ) {
+            haversineDistanceKm(
+                previousCoordinates.first,
+                previousCoordinates.second,
+                currentCoordinates.first,
+                currentCoordinates.second
+            )
+        } else {
+            null
+        }
+    }
+
+    return when {
+        distance == null -> "walk"
+        distance <= 1.8 -> "walk"
+        distance <= 9.0 -> "transit"
+        else -> "drive"
+    }
+}
+
+private fun transitionModeIcon(mode: String): String =
+    when (mode) {
+        "walk" -> "🚶"
+        "drive" -> "🚗"
+        "transit" -> "🚌"
+        else -> "➡️"
+    }
+
+private fun transitionModeLabel(mode: String): String =
+    when (mode) {
+        "walk" -> "הליכה"
+        "drive" -> "נסיעה ברכב"
+        "transit" -> "תחבורה ציבורית"
+        else -> "מעבר"
+    }
+
+private fun activityCoordinates(
+    activity: ActivityItem
+): Pair<Double, Double>? {
+    if (
+        activity.latitude != null &&
+        activity.longitude != null
+    ) {
+        return activity.latitude to activity.longitude
+    }
+
+    val decoded = runCatching {
+        java.net.URLDecoder.decode(
+            activity.mapsUrl,
+            "UTF-8"
+        )
+    }.getOrDefault(activity.mapsUrl)
+
+    val match = Regex(
+        """query=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)"""
+    ).find(decoded) ?: return null
+
+    val latitude =
+        match.groupValues[1].toDoubleOrNull()
+            ?: return null
+    val longitude =
+        match.groupValues[2].toDoubleOrNull()
+            ?: return null
+
+    return latitude to longitude
+}
+
+private fun haversineDistanceKm(
+    lat1: Double,
+    lon1: Double,
+    lat2: Double,
+    lon2: Double
+): Double {
+    val earthRadiusKm = 6371.0
+    val latitudeDelta =
+        Math.toRadians(lat2 - lat1)
+    val longitudeDelta =
+        Math.toRadians(lon2 - lon1)
+
+    val a =
+        kotlin.math.sin(latitudeDelta / 2)
+            .let { it * it } +
+            kotlin.math.cos(Math.toRadians(lat1)) *
+            kotlin.math.cos(Math.toRadians(lat2)) *
+            kotlin.math.sin(longitudeDelta / 2)
+                .let { it * it }
+
+    return earthRadiusKm * 2 *
+        kotlin.math.atan2(
+            kotlin.math.sqrt(a),
+            kotlin.math.sqrt(1 - a)
+        )
 }
 
 private fun activityDurationMinutes(value: String): Int {
@@ -3884,6 +4302,17 @@ private fun ActivityEditorDialog(
     var fixedTime by remember(activity?.id) {
         mutableStateOf(activity?.fixedTime ?: false)
     }
+    var transitionMode by remember(activity?.id) {
+        mutableStateOf(activity?.transitionMode ?: "auto")
+    }
+    var transitionAutomatic by remember(activity?.id) {
+        mutableStateOf(activity?.transitionAutomatic ?: true)
+    }
+    var transitionMinutesText by remember(activity?.id) {
+        mutableStateOf(
+            (activity?.transitionMinutes ?: 0).toString()
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -3901,6 +4330,66 @@ private fun ActivityEditorDialog(
                 item { OutlinedTextField(location, { location = it }, label = { Text("מיקום") }) }
                 item { OutlinedTextField(transport, { transport = it }, label = { Text("אמצעי הגעה") }) }
                 item { OutlinedTextField(directions, { directions = it }, label = { Text("קו / הוראות") }) }
+                item {
+                    SectionCard(containerColor = SoftAqua) {
+                        Text(
+                            "מעבר מהפעילות הקודמת",
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            listOf(
+                                "auto" to "אוטומטי",
+                                "walk" to "הליכה",
+                                "transit" to "תחבורה",
+                                "drive" to "רכב"
+                            ).forEach { (value, title) ->
+                                FilterChip(
+                                    selected = transitionMode == value,
+                                    onClick = {
+                                        transitionMode = value
+                                        transitionAutomatic = true
+                                    },
+                                    label = { Text(title) }
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "חישוב אוטומטי",
+                                modifier = Modifier.weight(1f),
+                                color = TextSecondary
+                            )
+                            Switch(
+                                checked = transitionAutomatic,
+                                onCheckedChange = {
+                                    transitionAutomatic = it
+                                }
+                            )
+                        }
+
+                        if (!transitionAutomatic) {
+                            OutlinedTextField(
+                                value = transitionMinutesText,
+                                onValueChange = {
+                                    transitionMinutesText =
+                                        it.filter(Char::isDigit)
+                                },
+                                label = { Text("דקות מעבר") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
                 item { OutlinedTextField(duration, { duration = it }, label = { Text("משך") }) }
                 item { OutlinedTextField(cost, { cost = it }, label = { Text("עלות") }) }
                 item { OutlinedTextField(notes, { notes = it }, label = { Text("הערות") }) }
@@ -3943,7 +4432,16 @@ private fun ActivityEditorDialog(
                             mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
                                 Uri.encode(location.ifBlank { name }),
                             completed = activity?.completed ?: false,
-                            fixedTime = fixedTime
+                            fixedTime = fixedTime,
+                            latitude = activity?.latitude,
+                            longitude = activity?.longitude,
+                            transitionMode = transitionMode,
+                            transitionMinutes =
+                                transitionMinutesText.toIntOrNull()
+                                    ?.coerceAtLeast(0)
+                                    ?: 0,
+                            transitionAutomatic =
+                                transitionAutomatic
                         )
                     )
                 }
