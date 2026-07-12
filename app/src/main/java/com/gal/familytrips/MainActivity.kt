@@ -1971,29 +1971,58 @@ private fun DayDetailScreen(
 
                             IconButton(
                                 onClick = {
+                                    val activityIndex =
+                                        orderedActivities.indexOfFirst {
+                                            it.id == activity.id
+                                        }
+
+                                    val insertIndex = if (
+                                        activityIndex >= 0
+                                    ) {
+                                        activityIndex + 1
+                                    } else {
+                                        orderedActivities.size
+                                    }
+
                                     val duplicated = activity.copy(
                                         id = UUID.randomUUID().toString(),
                                         name = "${activity.name} – עותק",
-                                        completed = false
+                                        time = suggestedTimeAtIndex(
+                                            orderedActivities.toList(),
+                                            insertIndex
+                                        ),
+                                        completed = false,
+                                        fixedTime = false
                                     )
-                                    val activityIndex = day.activities.indexOfFirst {
-                                        it.id == activity.id
-                                    }
-                                    val updatedActivities = day.activities.toMutableList()
-                                    val insertIndex = if (activityIndex >= 0) {
-                                        activityIndex + 1
-                                    } else {
-                                        updatedActivities.size
-                                    }
-                                    updatedActivities.add(insertIndex, duplicated)
 
-                                    val updatedDay = day.copy(
-                                        activities = updatedActivities
+                                    val updatedActivities =
+                                        orderedActivities.toMutableList()
+                                    updatedActivities.add(
+                                        insertIndex,
+                                        duplicated
                                     )
+
+                                    val updatedDay =
+                                        validateAndNormalizeDayTimeline(
+                                            day.copy(
+                                                activities =
+                                                    updatedActivities
+                                            )
+                                        )
+
+                                    orderedActivities.clear()
+                                    orderedActivities.addAll(
+                                        updatedDay.activities
+                                    )
+
                                     onTripChange(
                                         trip.copy(
                                             days = trip.days.map {
-                                                if (it.id == day.id) updatedDay else it
+                                                if (it.id == day.id) {
+                                                    updatedDay
+                                                } else {
+                                                    it
+                                                }
                                             }
                                         )
                                     )
