@@ -32,6 +32,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -1219,22 +1221,6 @@ private fun DaysScreen(
             end = Navy
         )
 
-        DynamicClockBar(trip)
-        Spacer(Modifier.height(10.dp))
-
-        SectionCard(containerColor = SoftBlue) {
-            Text(
-                "הימים נוצרים אוטומטית לפי יעדי הטיול והתאריכים.",
-                fontWeight = FontWeight.Bold,
-                color = Navy
-            )
-            Text(
-                "כדי לשנות תאריכים או להוסיף יעד, ערוך את פרטי הטיול במסך הטיולים.",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary
-            )
-        }
-
         Spacer(Modifier.height(10.dp))
 
         LazyVerticalGrid(
@@ -1409,6 +1395,8 @@ private fun DayDetailScreen(
     var dragOffsetY by remember(day.id) {
         mutableStateOf(0f)
     }
+    val timelineListState = rememberLazyListState()
+    val timelineScope = rememberCoroutineScope()
 
     LaunchedEffect(day.activities, draggingActivityId) {
         if (draggingActivityId == null) {
@@ -1468,8 +1456,6 @@ private fun DayDetailScreen(
         }
 
         Spacer(Modifier.height(9.dp))
-        DynamicClockBar(trip)
-        Spacer(Modifier.height(8.dp))
         WeatherCard(trip = trip, day = day, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(9.dp))
 
@@ -1545,6 +1531,7 @@ private fun DayDetailScreen(
         Spacer(Modifier.height(10.dp))
 
         LazyColumn(
+            state = timelineListState,
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(9.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
@@ -1604,6 +1591,37 @@ private fun DayDetailScreen(
                                     }
 
                                     dragOffsetY += deltaY
+
+                                    timelineScope.launch {
+                                        val visibleItems = timelineListState
+                                            .layoutInfo
+                                            .visibleItemsInfo
+                                        val firstVisibleIndex =
+                                            visibleItems.firstOrNull()?.index
+                                        val lastVisibleIndex =
+                                            visibleItems.lastOrNull()?.index
+                                        val currentListIndex =
+                                            orderedActivities.indexOfFirst {
+                                                it.id == activity.id
+                                            }
+
+                                        val nearBottom =
+                                            deltaY > 0 &&
+                                                lastVisibleIndex != null &&
+                                                currentListIndex >=
+                                                lastVisibleIndex - 1
+                                        val nearTop =
+                                            deltaY < 0 &&
+                                                firstVisibleIndex != null &&
+                                                currentListIndex <=
+                                                firstVisibleIndex + 1
+
+                                        if (nearBottom || nearTop) {
+                                            timelineListState.scrollBy(
+                                                deltaY * 1.8f
+                                            )
+                                        }
+                                    }
 
                                     val currentIndex = orderedActivities
                                         .indexOfFirst { it.id == activity.id }
@@ -1693,21 +1711,6 @@ private fun DayDetailScreen(
                                     activity.name,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            IconButton(
-                                onClick = {
-                                    insertionIndex = index + 1
-                                    quickAddActivity = true
-                                },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                CompactActionCircle(
-                                    symbol = "+",
-                                    description = "הוספת פעילות אחרי ${activity.name}",
-                                    background = SoftBlue,
-                                    content = Sky
                                 )
                             }
 
@@ -2069,6 +2072,59 @@ private fun DayDetailScreen(
                 editingActivity = null
             }
         )
+    }
+}
+
+
+@Composable
+private fun ActivityTimePickerField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    supportingText: String = ""
+) {
+    val context = LocalContext.current
+    val minutes = activityTimeMinutes(value) ?: 9 * 60
+
+    OutlinedButton(
+        onClick = {
+            android.app.TimePickerDialog(
+                context,
+                { _, hour, minute ->
+                    onValueChange("%02d:%02d".format(hour, minute))
+                },
+                minutes / 60,
+                minutes % 60,
+                true
+            ).show()
+        },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Text("🕒")
+        Spacer(Modifier.width(8.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
+            Text(
+                value.ifBlank { "בחירת שעה" },
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+            if (supportingText.isNotBlank()) {
+                Text(
+                    supportingText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
+            }
+        }
     }
 }
 
@@ -2769,21 +2825,15 @@ private fun QuickActivityDialog(
                 }
 
                 item {
-                    OutlinedTextField(
+                    ActivityTimePickerField(
+                        label = "שעת התחלה",
                         value = time,
                         onValueChange = { time = it },
-                        label = { Text("שעת התחלה") },
-                        supportingText = {
-                            Text(
-                                if (fixedTime) {
-                                    "השעה לא תוזז בחישוב אוטומטי"
-                                } else {
-                                    "נקבעה לפי סיום הפעילות הקודמת"
-                                }
-                            )
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        supportingText = if (fixedTime) {
+                            "השעה לא תוזז בחישוב אוטומטי"
+                        } else {
+                            "נקבעה לפי סיום הפעילות הקודמת"
+                        }
                     )
                 }
 
@@ -3359,91 +3409,92 @@ private fun MoveActivityDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
-    var selectedDayId by remember {
-        mutableStateOf(
-            days.firstOrNull { it.id != currentDayId }?.id.orEmpty()
-        )
-    }
+    val targetDays = days
+        .filter { it.id != currentDayId }
+        .sortedBy { it.date }
 
-    val targetDays = days.filter { it.id != currentDayId }
+    var selectedDayId by remember(targetDays) {
+        mutableStateOf(targetDays.firstOrNull()?.id.orEmpty())
+    }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    val selectedDay = targetDays.firstOrNull {
+        it.id == selectedDayId
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text("העברת פעילות")
-        },
+        title = { Text("העברה ליום אחר") },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(9.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     activity.name,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
                 )
 
                 if (targetDays.isEmpty()) {
                     Text(
-                        "אין יום נוסף בטיול. יש להוסיף יום לפני העברת הפעילות.",
+                        "אין תאריך נוסף בטיול שאליו אפשר להעביר את הפעילות.",
                         color = TextSecondary
                     )
                 } else {
-                    targetDays.forEach { targetDay ->
-                        Surface(
-                            onClick = {
-                                selectedDayId = targetDay.id
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (selectedDayId == targetDay.id) {
-                                SoftBlue
-                            } else {
-                                CardWhite
-                            },
-                            border = BorderStroke(
-                                if (selectedDayId == targetDay.id) 2.dp else 1.dp,
-                                if (selectedDayId == targetDay.id) {
-                                    Sky
-                                } else {
-                                    Color(0xFFE3E9F0)
-                                }
-                            )
+                    Text(
+                        "בחר תאריך יעד",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { menuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(11.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = selectedDayId == targetDay.id,
+                            Text(
+                                selectedDay?.date ?: "בחירת תאריך",
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text("⌄")
+                        }
+
+                        DropdownMenu(
+                            expanded = menuOpen,
+                            onDismissRequest = { menuOpen = false }
+                        ) {
+                            targetDays.forEach { targetDay ->
+                                DropdownMenuItem(
+                                    text = { Text(targetDay.date) },
                                     onClick = {
                                         selectedDayId = targetDay.id
+                                        menuOpen = false
                                     }
                                 )
-                                Column {
-                                    Text(
-                                        targetDay.title,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        targetDay.date,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TextSecondary
-                                    )
-                                }
                             }
                         }
                     }
+
+                    selectedDay?.destination
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let {
+                            Text(
+                                "📍 $it",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Aqua
+                            )
+                        }
                 }
             }
         },
         confirmButton = {
             TextButton(
                 enabled = selectedDayId.isNotBlank(),
-                onClick = {
-                    onConfirm(selectedDayId)
-                }
+                onClick = { onConfirm(selectedDayId) }
             ) {
-                Text("העברה")
+                Text("העבר לתאריך")
             }
         },
         dismissButton = {
@@ -3584,7 +3635,13 @@ private fun ActivityEditorDialog(
         title = { Text(title) },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { OutlinedTextField(time, { time = it }, label = { Text("שעה") }) }
+                item {
+                    ActivityTimePickerField(
+                        label = "שעה",
+                        value = time,
+                        onValueChange = { time = it }
+                    )
+                }
                 item { OutlinedTextField(name, { name = it }, label = { Text("שם הפעילות") }) }
                 item { OutlinedTextField(location, { location = it }, label = { Text("מיקום") }) }
                 item { OutlinedTextField(transport, { transport = it }, label = { Text("אמצעי הגעה") }) }

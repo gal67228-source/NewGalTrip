@@ -108,6 +108,10 @@ fun TodayScreen(
         }
 
         item {
+            DynamicClockBar(trip)
+        }
+
+        item {
             SectionCard(
                 containerColor = if (nextActivity == null) SoftMint else SoftBlue
             ) {
