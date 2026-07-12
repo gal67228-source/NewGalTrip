@@ -8,6 +8,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
+import kotlin.math.*
 
 enum class PlaceSearchCategory(
     val queryWords: List<String>,
@@ -97,10 +98,25 @@ data class FreePlaceSuggestion(
     val latitude: Double?,
     val longitude: Double?,
     val source: String,
-    val category: String = ""
+    val category: String = "",
+    val distanceKm: Double? = null,
+    val isLocal: Boolean = false
+)
+
+private data class DestinationArea(
+    val displayName: String,
+    val latitude: Double,
+    val longitude: Double,
+    val south: Double,
+    val north: Double,
+    val west: Double,
+    val east: Double
 )
 
 object FreePlaceSearch {
+    private val destinationCache =
+        mutableMapOf<String, DestinationArea?>()
+
     suspend fun search(
         query: String,
         destination: String,
@@ -112,30 +128,146 @@ object FreePlaceSearch {
             return@withContext emptyList()
         }
 
-        val photonResults = searchPhoton(
-            query = normalizedQuery,
-            destination = destination,
-            category = category,
-            limit = limit
-        )
+        val area = resolveDestinationArea(destination)
 
-        val nominatimResults = if (photonResults.size < 5) {
-            searchNominatim(
+        // שלב 1: חיפוש מקומי ומוגבל לאזור היעד.
+        val localResults = if (area != null) {
+            val boundedNominatim = searchNominatim(
                 query = normalizedQuery,
                 destination = destination,
                 category = category,
+                limit = 15,
+                area = area,
+                bounded = true
+            )
+
+            val biasedPhoton = searchPhoton(
+                query = normalizedQuery,
+                destination = destination,
+                category = category,
+                limit = 15,
+                area = area
+            )
+
+            rankAndMerge(
+                query = normalizedQuery,
+                destination = destination,
+                category = category,
+                results = boundedNominatim + biasedPhoton,
+                area = area,
+                localOnly = true,
                 limit = limit
             )
         } else {
             emptyList()
         }
 
-        rankAndMerge(
+        // אם יש מספיק תוצאות מקומיות, לא מבצעים חיפוש עולמי בכלל.
+        if (localResults.size >= 5) {
+            return@withContext localResults.take(limit)
+        }
+
+        // שלב 2: רק במקרה שאין מספיק תוצאות מקומיות, מוסיפים תוצאות רחוקות.
+        val globalResults = searchPhoton(
             query = normalizedQuery,
             destination = destination,
             category = category,
-            results = photonResults + nominatimResults,
-            limit = limit
+            limit = 15,
+            area = area
+        ) + searchNominatim(
+            query = normalizedQuery,
+            destination = destination,
+            category = category,
+            limit = 12,
+            area = null,
+            bounded = false
+        )
+
+        val rankedGlobal = rankAndMerge(
+            query = normalizedQuery,
+            destination = destination,
+            category = category,
+            results = globalResults,
+            area = area,
+            localOnly = false,
+            limit = limit * 2
+        )
+
+        (localResults + rankedGlobal)
+            .distinctBy {
+                "${normalize(it.name)}|${normalize(it.address)}|" +
+                    "${it.latitude}|${it.longitude}"
+            }
+            .sortedWith(
+                compareByDescending<FreePlaceSuggestion> { it.isLocal }
+                    .thenBy { it.distanceKm ?: Double.MAX_VALUE }
+            )
+            .take(limit)
+    }
+
+    private fun resolveDestinationArea(
+        destination: String
+    ): DestinationArea? {
+        val key = destination.trim().lowercase(Locale.ROOT)
+        if (key.isBlank()) return null
+
+        synchronized(destinationCache) {
+            if (destinationCache.containsKey(key)) {
+                return destinationCache[key]
+            }
+        }
+
+        val destinationQuery = destination
+            .substringAfterLast("→")
+            .trim()
+
+        val url = URL(
+            "https://nominatim.openstreetmap.org/search" +
+                "?q=${Uri.encode(destinationQuery)}" +
+                "&format=jsonv2" +
+                "&limit=1" +
+                "&addressdetails=1"
+        )
+
+        val payload = request(url)
+        val result = payload?.let(::parseDestinationArea)
+
+        synchronized(destinationCache) {
+            destinationCache[key] = result
+        }
+        return result
+    }
+
+    private fun parseDestinationArea(
+        payload: String
+    ): DestinationArea? {
+        val array = runCatching { JSONArray(payload) }.getOrNull()
+            ?: return null
+        val item = array.optJSONObject(0) ?: return null
+
+        val latitude = item.optString("lat").toDoubleOrNull()
+            ?: return null
+        val longitude = item.optString("lon").toDoubleOrNull()
+            ?: return null
+
+        val bbox = item.optJSONArray("boundingbox")
+        val south = bbox?.optString(0)?.toDoubleOrNull()
+            ?: latitude - 0.25
+        val north = bbox?.optString(1)?.toDoubleOrNull()
+            ?: latitude + 0.25
+        val west = bbox?.optString(2)?.toDoubleOrNull()
+            ?: longitude - 0.35
+        val east = bbox?.optString(3)?.toDoubleOrNull()
+            ?: longitude + 0.35
+
+        return DestinationArea(
+            displayName = item.optString("display_name"),
+            latitude = latitude,
+            longitude = longitude,
+            south = south,
+            north = north,
+            west = west,
+            east = east
         )
     }
 
@@ -143,7 +275,8 @@ object FreePlaceSearch {
         query: String,
         destination: String,
         category: PlaceSearchCategory,
-        limit: Int
+        limit: Int,
+        area: DestinationArea?
     ): List<FreePlaceSuggestion> {
         val categoryText = category.queryWords.joinToString(" ")
         val variants = listOf(
@@ -152,21 +285,27 @@ object FreePlaceSearch {
             listOf(query, destination)
                 .filter { it.isNotBlank() }.joinToString(" "),
             listOf(query, categoryText)
-                .filter { it.isNotBlank() }.joinToString(" "),
-            query
+                .filter { it.isNotBlank() }.joinToString(" ")
         ).distinct()
 
         val results = mutableListOf<FreePlaceSuggestion>()
 
         variants.forEachIndexed { variantIndex, fullQuery ->
-            val url = URL(
+            var urlText =
                 "https://photon.komoot.io/api/?" +
                     "q=${Uri.encode(fullQuery)}" +
-                    "&limit=${limit.coerceAtMost(15)}" +
+                    "&limit=${limit.coerceAtMost(20)}" +
                     "&lang=en"
-            )
 
-            request(url)?.let { payload ->
+            if (area != null) {
+                urlText +=
+                    "&lat=${area.latitude}" +
+                    "&lon=${area.longitude}" +
+                    "&zoom=12" +
+                    "&location_bias_scale=0.05"
+            }
+
+            request(URL(urlText))?.let { payload ->
                 results += parsePhoton(payload, "photon-$variantIndex")
             }
         }
@@ -178,30 +317,43 @@ object FreePlaceSearch {
         query: String,
         destination: String,
         category: PlaceSearchCategory,
-        limit: Int
+        limit: Int,
+        area: DestinationArea?,
+        bounded: Boolean
     ): List<FreePlaceSuggestion> {
         val categoryText = category.queryWords.firstOrNull().orEmpty()
         val variants = listOf(
             listOf(query, categoryText, destination)
                 .filter { it.isNotBlank() }.joinToString(", "),
             listOf(query, destination)
-                .filter { it.isNotBlank() }.joinToString(", "),
-            query
+                .filter { it.isNotBlank() }.joinToString(", ")
         ).distinct()
 
         val results = mutableListOf<FreePlaceSuggestion>()
 
         variants.forEachIndexed { variantIndex, fullQuery ->
-            val url = URL(
+            var urlText =
                 "https://nominatim.openstreetmap.org/search" +
                     "?q=${Uri.encode(fullQuery)}" +
                     "&format=jsonv2" +
                     "&addressdetails=1" +
-                    "&limit=${limit.coerceAtMost(10)}"
-            )
+                    "&limit=${limit.coerceAtMost(20)}"
 
-            request(url)?.let { payload ->
-                results += parseNominatim(payload, "nominatim-$variantIndex")
+            if (area != null) {
+                urlText +=
+                    "&viewbox=${area.west},${area.north}," +
+                    "${area.east},${area.south}"
+
+                if (bounded) {
+                    urlText += "&bounded=1"
+                }
+            }
+
+            request(URL(urlText))?.let { payload ->
+                results += parseNominatim(
+                    payload,
+                    "nominatim-$variantIndex"
+                )
             }
         }
 
@@ -215,7 +367,7 @@ object FreePlaceSearch {
             readTimeout = 12_000
             setRequestProperty(
                 "User-Agent",
-                "GalFamilyTrips/3.7.0 Android"
+                "GalFamilyTrips/3.7.2 Android"
             )
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Accept-Language", "en")
@@ -304,9 +456,7 @@ object FreePlaceSearch {
         return buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                val addressObject = item.optJSONObject("address")
                 val displayName = item.optString("display_name")
-
                 val name = firstNonBlank(
                     item.optString("name"),
                     displayName.substringBefore(",")
@@ -336,6 +486,8 @@ object FreePlaceSearch {
         destination: String,
         category: PlaceSearchCategory,
         results: List<FreePlaceSuggestion>,
+        area: DestinationArea?,
+        localOnly: Boolean,
         limit: Int
     ): List<FreePlaceSuggestion> {
         val queryTokens = tokenize(query)
@@ -346,38 +498,109 @@ object FreePlaceSearch {
                 "${normalize(it.name)}|${normalize(it.address)}|" +
                     "${it.latitude}|${it.longitude}"
             }
-            .map { suggestion ->
+            .mapNotNull { suggestion ->
                 val normalizedName = normalize(suggestion.name)
                 val combined = normalize(
                     "${suggestion.name} ${suggestion.address} ${suggestion.category}"
                 )
+
+                val distance = if (
+                    area != null &&
+                    suggestion.latitude != null &&
+                    suggestion.longitude != null
+                ) {
+                    haversineKm(
+                        area.latitude,
+                        area.longitude,
+                        suggestion.latitude,
+                        suggestion.longitude
+                    )
+                } else {
+                    null
+                }
+
+                val insideBounds = if (
+                    area != null &&
+                    suggestion.latitude != null &&
+                    suggestion.longitude != null
+                ) {
+                    suggestion.latitude in area.south..area.north &&
+                        suggestion.longitude in area.west..area.east
+                } else {
+                    false
+                }
+
+                // חיפוש מקומי: מסירים תוצאות שאינן באזור.
+                if (
+                    localOnly &&
+                    !insideBounds &&
+                    (distance == null || distance > 80.0)
+                ) {
+                    return@mapNotNull null
+                }
+
                 var score = 0
 
                 queryTokens.forEach { token ->
-                    if (normalizedName.contains(token)) score += 20
-                    if (combined.contains(token)) score += 8
+                    if (normalizedName.contains(token)) score += 25
+                    if (combined.contains(token)) score += 10
                 }
 
                 destinationTokens.forEach { token ->
-                    if (combined.contains(token)) score += 5
+                    if (combined.contains(token)) score += 8
                 }
 
                 category.rankingWords.forEach { word ->
                     if (combined.contains(normalize(word))) score += 7
                 }
 
-                if (
-                    suggestion.latitude != null &&
-                    suggestion.longitude != null
-                ) {
-                    score += 2
+                if (insideBounds) score += 100
+                if (distance != null) {
+                    score += when {
+                        distance <= 5 -> 80
+                        distance <= 15 -> 60
+                        distance <= 40 -> 40
+                        distance <= 80 -> 20
+                        distance <= 200 -> 5
+                        else -> -40
+                    }
                 }
 
-                suggestion to score
+                suggestion.copy(
+                    distanceKm = distance,
+                    isLocal = insideBounds ||
+                        (distance != null && distance <= 80.0)
+                ) to score
             }
-            .sortedByDescending { it.second }
+            .sortedWith(
+                compareByDescending<Pair<FreePlaceSuggestion, Int>> {
+                    it.first.isLocal
+                }
+                    .thenByDescending { it.second }
+                    .thenBy {
+                        it.first.distanceKm ?: Double.MAX_VALUE
+                    }
+            )
             .map { it.first }
             .take(limit)
+    }
+
+    private fun haversineKm(
+        lat1: Double,
+        lon1: Double,
+        lat2: Double,
+        lon2: Double
+    ): Double {
+        val earthRadiusKm = 6371.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a =
+            sin(dLat / 2).pow(2) +
+                cos(Math.toRadians(lat1)) *
+                cos(Math.toRadians(lat2)) *
+                sin(dLon / 2).pow(2)
+
+        return earthRadiusKm * 2 * atan2(sqrt(a), sqrt(1 - a))
     }
 
     private fun tokenize(value: String): List<String> =
