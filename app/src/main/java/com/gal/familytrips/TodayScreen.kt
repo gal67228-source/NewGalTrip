@@ -56,7 +56,16 @@ fun TodayScreen(
         completedCount.toFloat() / totalCount.toFloat()
     }
 
+    val selectedDayDate = runCatching {
+        LocalDate.parse(selectedDay.date)
+    }.getOrNull()
+
     val isActualToday = selectedDay.date == today.toString()
+    val dayHasArrived = selectedDayDate?.let {
+        !it.isAfter(today)
+    } ?: false
+    val isFutureDay = selectedDayDate?.isAfter(today) == true
+
     val nowMinutes = LocalTime.now().hour * 60 + LocalTime.now().minute
 
     val currentActivity = remember(
@@ -215,12 +224,17 @@ fun TodayScreen(
                 previousActivity = currentOrPrevious,
                 departureStatus = departureStatus,
                 departureMinutes = departureMinutes,
+                dayHasArrived = dayHasArrived,
+                isFutureDay = isFutureDay,
                 onOpenUrl = onOpenUrl,
                 onCompleteCurrent = {
                     val activityToComplete =
                         currentActivity ?: nextActivity
 
-                    if (activityToComplete != null) {
+                    if (
+                        activityToComplete != null &&
+                        dayHasArrived
+                    ) {
                         val updatedDay = selectedDay.copy(
                             activities = selectedDay.activities.map {
                                 if (it.id == activityToComplete.id) {
@@ -357,7 +371,36 @@ fun TodayScreen(
             TodayActivityRow(
                 activity = activity,
                 isCurrent = currentActivity?.id == activity.id,
-                isNext = nextActivity?.id == activity.id
+                isNext = nextActivity?.id == activity.id,
+                canResetCompletion = canResetCompletionToday(
+                    activity = activity,
+                    selectedDayDate = selectedDayDate,
+                    today = today,
+                    nowMinutes = nowMinutes
+                ),
+                onResetCompletion = {
+                    val updatedDay = selectedDay.copy(
+                        activities = selectedDay.activities.map {
+                            if (it.id == activity.id) {
+                                it.copy(completed = false)
+                            } else {
+                                it
+                            }
+                        }
+                    )
+
+                    onTripChange(
+                        trip.copy(
+                            days = trip.days.map {
+                                if (it.id == selectedDay.id) {
+                                    updatedDay
+                                } else {
+                                    it
+                                }
+                            }
+                        )
+                    )
+                }
             )
         }
     }
@@ -416,6 +459,8 @@ private fun TodayCommandCard(
     previousActivity: ActivityItem?,
     departureStatus: String?,
     departureMinutes: Int?,
+    dayHasArrived: Boolean,
+    isFutureDay: Boolean,
     onOpenUrl: (String) -> Unit,
     onCompleteCurrent: () -> Unit
 ) {
@@ -586,15 +631,29 @@ private fun TodayCommandCard(
 
         Button(
             onClick = onCompleteCurrent,
+            enabled = dayHasArrived,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
         ) {
             Text(
-                if (currentActivity != null) {
-                    "סיימתי את הפעילות"
-                } else {
-                    "סמן את הפעילות כהושלמה"
+                when {
+                    isFutureDay ->
+                        "אפשר לסמן רק ביום הפעילות"
+
+                    currentActivity != null ->
+                        "סיימתי את הפעילות"
+
+                    else ->
+                        "סמן את הפעילות כהושלמה"
                 }
+            )
+        }
+
+        if (!dayHasArrived) {
+            Text(
+                "הפעילות עדיין לא הגיעה ולכן לא ניתן לסמן אותה כהושלמה.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
             )
         }
     }
@@ -604,7 +663,9 @@ private fun TodayCommandCard(
 private fun TodayActivityRow(
     activity: ActivityItem,
     isCurrent: Boolean,
-    isNext: Boolean
+    isNext: Boolean,
+    canResetCompletion: Boolean,
+    onResetCompletion: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -695,23 +756,72 @@ private fun TodayActivityRow(
             }
 
             if (activity.completed) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFFD9F3E4)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        "✓",
-                        modifier = Modifier.padding(
-                            horizontal = 8.dp,
-                            vertical = 4.dp
-                        ),
-                        color = Color(0xFF2E7D56),
-                        fontWeight = FontWeight.Bold
-                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFFD9F3E4)
+                    ) {
+                        Text(
+                            "✓",
+                            modifier = Modifier.padding(
+                                horizontal = 8.dp,
+                                vertical = 4.dp
+                            ),
+                            color = Color(0xFF2E7D56),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    if (canResetCompletion) {
+                        TextButton(
+                            onClick = onResetCompletion,
+                            contentPadding = PaddingValues(
+                                horizontal = 6.dp,
+                                vertical = 0.dp
+                            )
+                        ) {
+                            Text(
+                                "איפוס",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+private fun canResetCompletionToday(
+    activity: ActivityItem,
+    selectedDayDate: LocalDate?,
+    today: LocalDate,
+    nowMinutes: Int
+): Boolean {
+    if (!activity.completed || selectedDayDate == null) {
+        return false
+    }
+
+    if (selectedDayDate.isAfter(today)) {
+        return true
+    }
+
+    if (selectedDayDate.isBefore(today)) {
+        return false
+    }
+
+    val endMinutes =
+        activityClockMinutesToday(activity.time)
+            ?.plus(
+                activityDurationMinutesToday(
+                    activity.duration
+                )
+            )
+            ?: return false
+
+    return nowMinutes < endMinutes
 }
 
 private fun activityClockMinutesToday(value: String): Int? {
