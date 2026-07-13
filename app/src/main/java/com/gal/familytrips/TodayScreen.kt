@@ -1,9 +1,7 @@
-
 package com.gal.familytrips
 
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,26 +47,113 @@ fun TodayScreen(
         return
     }
 
-    val completedCount = selectedDay.activities.count { it.completed }
-    val totalCount = selectedDay.activities.size
-    val progress = if (totalCount == 0) 0f
-    else completedCount.toFloat() / totalCount.toFloat()
+    val activities = selectedDay.activities
+    val completedCount = activities.count { it.completed }
+    val totalCount = activities.size
+    val progress = if (totalCount == 0) {
+        0f
+    } else {
+        completedCount.toFloat() / totalCount.toFloat()
+    }
 
-    val currentMinutes = LocalTime.now().hour * 60 + LocalTime.now().minute
+    val isActualToday = selectedDay.date == today.toString()
+    val nowMinutes = LocalTime.now().hour * 60 + LocalTime.now().minute
 
-    val nextActivity = selectedDay.activities.firstOrNull {
-        !it.completed &&
-            (today.toString() != selectedDay.date ||
-                activityClockMinutesToday(it.time) == null ||
-                activityClockMinutesToday(it.time)!! >= currentMinutes)
-    } ?: selectedDay.activities.firstOrNull { !it.completed }
+    val currentActivity = remember(
+        activities,
+        nowMinutes,
+        isActualToday
+    ) {
+        if (!isActualToday) {
+            null
+        } else {
+            activities.firstOrNull { activity ->
+                if (activity.completed) {
+                    false
+                } else {
+                    val start = activityClockMinutesToday(activity.time)
+                    val end = start?.plus(
+                        activityDurationMinutesToday(activity.duration)
+                    )
+                    start != null &&
+                        end != null &&
+                        nowMinutes in start until end
+                }
+            }
+        }
+    }
+
+    val nextActivity = remember(
+        activities,
+        currentActivity,
+        nowMinutes,
+        isActualToday
+    ) {
+        val currentIndex = currentActivity?.let { current ->
+            activities.indexOfFirst { it.id == current.id }
+        } ?: -1
+
+        when {
+            currentIndex >= 0 -> {
+                activities.drop(currentIndex + 1)
+                    .firstOrNull { !it.completed }
+            }
+
+            isActualToday -> {
+                activities.firstOrNull { activity ->
+                    !activity.completed &&
+                        (
+                            activityClockMinutesToday(activity.time)
+                                ?: Int.MAX_VALUE
+                            ) >= nowMinutes
+                } ?: activities.firstOrNull { !it.completed }
+            }
+
+            else -> activities.firstOrNull { !it.completed }
+        }
+    }
+
+    val currentOrPrevious = currentActivity ?: run {
+        val nextIndex = nextActivity?.let { next ->
+            activities.indexOfFirst { it.id == next.id }
+        } ?: -1
+
+        if (nextIndex > 0) {
+            activities[nextIndex - 1]
+        } else {
+            null
+        }
+    }
+
+    val departureMinutes = nextActivity?.let { next ->
+        activityClockMinutesToday(next.time)
+            ?.minus(next.transitionMinutes.coerceAtLeast(0))
+    }
+
+    val departureStatus = remember(
+        departureMinutes,
+        nowMinutes,
+        isActualToday
+    ) {
+        if (!isActualToday || departureMinutes == null) {
+            null
+        } else {
+            val delta = departureMinutes - nowMinutes
+            when {
+                delta > 1 -> "כדאי לצאת בעוד $delta דקות"
+                delta in 0..1 -> "צא עכשיו"
+                else -> "איחור של ${-delta} דקות"
+            }
+        }
+    }
 
     val activeHotel = trip.hotels.firstOrNull { hotel ->
         runCatching {
             val dayDate = LocalDate.parse(selectedDay.date)
             val checkIn = LocalDate.parse(hotel.checkIn)
             val checkOut = LocalDate.parse(hotel.checkOut)
-            !dayDate.isBefore(checkIn) && !dayDate.isAfter(checkOut)
+            !dayDate.isBefore(checkIn) &&
+                !dayDate.isAfter(checkOut)
         }.getOrDefault(false)
     }
 
@@ -84,10 +168,13 @@ fun TodayScreen(
         selectedDay.id,
         trip.offlineMode
     ) {
-        value = if (trip.offlineMode) null
-        else runCatching {
-            WeatherService.load(trip, selectedDay)
-        }.getOrNull()
+        value = if (trip.offlineMode) {
+            null
+        } else {
+            runCatching {
+                WeatherService.load(trip, selectedDay)
+            }.getOrNull()
+        }
     }
 
     LazyColumn(
@@ -112,137 +199,52 @@ fun TodayScreen(
         }
 
         item {
-            SectionCard(
-                containerColor = if (nextActivity == null) SoftMint else SoftBlue
-            ) {
-                if (nextActivity == null) {
-                    Text(
-                        "כל הפעילויות הושלמו 🎉",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2E7D56)
-                    )
-                } else {
-                    Text(
-                        "הפעילות הבאה",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Sky
-                    )
-                    Text(
-                        "${nextActivity.time} · ${nextActivity.name}",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Navy
-                    )
+            TodayProgressCard(
+                completedCount = completedCount,
+                totalCount = totalCount,
+                progress = progress,
+                selectedDay = selectedDay,
+                sortedDays = sortedDays
+            )
+        }
 
-                    if (nextActivity.location.isNotBlank()) {
-                        Text(
-                            nextActivity.location,
-                            color = TextSecondary,
-                            style = MaterialTheme.typography.bodySmall
+        item {
+            TodayCommandCard(
+                currentActivity = currentActivity,
+                nextActivity = nextActivity,
+                previousActivity = currentOrPrevious,
+                departureStatus = departureStatus,
+                departureMinutes = departureMinutes,
+                onOpenUrl = onOpenUrl,
+                onCompleteCurrent = {
+                    val activityToComplete =
+                        currentActivity ?: nextActivity
+
+                    if (activityToComplete != null) {
+                        val updatedDay = selectedDay.copy(
+                            activities = selectedDay.activities.map {
+                                if (it.id == activityToComplete.id) {
+                                    it.copy(completed = true)
+                                } else {
+                                    it
+                                }
+                            }
                         )
-                    }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FilledTonalButton(
-                            onClick = {
-                                val destination = nextActivity.location
-                                    .ifBlank { nextActivity.name }
-                                onOpenUrl(
-                                    "https://www.google.com/maps/dir/?api=1" +
-                                        "&destination=${Uri.encode(destination)}"
-                                )
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Maps")
-                        }
-
-                        FilledTonalButton(
-                            onClick = {
-                                val destination = nextActivity.location
-                                    .ifBlank { nextActivity.name }
-                                onOpenUrl(
-                                    "https://waze.com/ul?q=" +
-                                        Uri.encode(destination) +
-                                        "&navigate=yes"
-                                )
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Waze")
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            val updatedDay = selectedDay.copy(
-                                activities = selectedDay.activities.map {
-                                    if (it.id == nextActivity.id) {
-                                        it.copy(completed = true)
+                        onTripChange(
+                            trip.copy(
+                                days = trip.days.map {
+                                    if (it.id == selectedDay.id) {
+                                        updatedDay
                                     } else {
                                         it
                                     }
                                 }
                             )
-
-                            onTripChange(
-                                trip.copy(
-                                    days = trip.days.map {
-                                        if (it.id == selectedDay.id) {
-                                            updatedDay
-                                        } else {
-                                            it
-                                        }
-                                    }
-                                )
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("סיימתי את הפעילות")
-                    }
-                }
-            }
-        }
-
-        item {
-            SectionCard(containerColor = CardWhite) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "התקדמות היום",
-                            fontWeight = FontWeight.Bold,
-                            color = Navy
-                        )
-                        Text(
-                            "$completedCount מתוך $totalCount פעילויות",
-                            color = TextSecondary,
-                            style = MaterialTheme.typography.bodySmall
                         )
                     }
-
-                    Text(
-                        "${(progress * 100).toInt()}%",
-                        fontWeight = FontWeight.Bold,
-                        color = Sky
-                    )
                 }
-
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Sky,
-                    trackColor = SoftBlue
-                )
-            }
+            )
         }
 
         weather?.let { currentWeather ->
@@ -314,11 +316,12 @@ fun TodayScreen(
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = SoftBlue,
-                    border = BorderStroke(1.dp, Color(0xFFD6E6F8))
+                    border = BorderStroke(
+                        1.dp,
+                        Color(0xFFD6E6F8)
+                    )
                 ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp)
-                    ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Text(
                             "✈️ ${flight.flightNumber.ifBlank { "טיסה" }}",
                             fontWeight = FontWeight.Bold,
@@ -341,109 +344,370 @@ fun TodayScreen(
 
         item {
             Text(
-                "המשך היום",
+                "ציר היום",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
         }
 
         items(
-            selectedDay.activities,
+            activities,
             key = { it.id }
         ) { activity ->
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = if (activity.completed) SoftMint else CardWhite,
-                border = BorderStroke(
-                    1.dp,
-                    if (activity.completed) {
-                        Color(0xFFBFE5D0)
-                    } else {
-                        Color(0xFFE3E9F0)
-                    }
+            TodayActivityRow(
+                activity = activity,
+                isCurrent = currentActivity?.id == activity.id,
+                isNext = nextActivity?.id == activity.id
+            )
+        }
+    }
+}
+
+@Composable
+private fun TodayProgressCard(
+    completedCount: Int,
+    totalCount: Int,
+    progress: Float,
+    selectedDay: TripDay,
+    sortedDays: List<TripDay>
+) {
+    val dayNumber = sortedDays.indexOfFirst {
+        it.id == selectedDay.id
+    }.let { if (it >= 0) it + 1 else 1 }
+
+    SectionCard(containerColor = CardWhite) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "יום $dayNumber מתוך ${sortedDays.size}",
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
                 )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (activity.completed) {
+                Text(
+                    "$completedCount מתוך $totalCount פעילויות הושלמו",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Text(
+                "${(progress * 100).toInt()}%",
+                fontWeight = FontWeight.Bold,
+                color = Sky
+            )
+        }
+
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth(),
+            color = Sky,
+            trackColor = SoftBlue
+        )
+    }
+}
+
+@Composable
+private fun TodayCommandCard(
+    currentActivity: ActivityItem?,
+    nextActivity: ActivityItem?,
+    previousActivity: ActivityItem?,
+    departureStatus: String?,
+    departureMinutes: Int?,
+    onOpenUrl: (String) -> Unit,
+    onCompleteCurrent: () -> Unit
+) {
+    SectionCard(
+        containerColor = when {
+            currentActivity != null -> SoftBlue
+            nextActivity != null -> SoftAqua
+            else -> SoftMint
+        }
+    ) {
+        if (currentActivity == null && nextActivity == null) {
+            Text(
+                "כל הפעילויות הושלמו 🎉",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF2E7D56)
+            )
+            return@SectionCard
+        }
+
+        currentActivity?.let { current ->
+            Text(
+                "עכשיו",
+                style = MaterialTheme.typography.labelSmall,
+                color = Sky
+            )
+            Text(
+                "${activityTimeRangeToday(current)} · ${current.name}",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+            if (current.location.isNotBlank()) {
+                Text(
+                    current.location,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        if (currentActivity == null && nextActivity != null) {
+            Text(
+                "הפעילות הקרובה",
+                style = MaterialTheme.typography.labelSmall,
+                color = Sky
+            )
+            Text(
+                "${activityTimeRangeToday(nextActivity)} · ${nextActivity.name}",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+        }
+
+        nextActivity?.let { next ->
+            HorizontalDivider(
+                color = Color(0xFFD6E6F8)
+            )
+
+            Text(
+                "הבא",
+                style = MaterialTheme.typography.labelSmall,
+                color = Aqua
+            )
+            Text(
+                "${next.time} · ${next.name}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+
+            if (next.transitionMinutes > 0) {
+                Text(
+                    "${transitionEmoji(next.transitionMode)} ${next.transitionMinutes} דקות מעבר",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            departureMinutes?.let {
+                Text(
+                    "שעת יציאה מומלצת: ${minutesToClockToday(it)}",
+                    color = Navy,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            departureStatus?.let { status ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = when {
+                        status.startsWith("צא עכשיו") ->
                             Color(0xFFD9F3E4)
-                        } else {
-                            SoftBlue
-                        },
-                        border = BorderStroke(
-                            1.dp,
-                            if (activity.completed) {
-                                Color(0xFFBFE5D0)
-                            } else {
-                                Color(0xFFD6E6F8)
-                            }
-                        )
-                    ) {
-                        Text(
-                            text = activity.time.ifBlank { "--:--" },
-                            modifier = Modifier.padding(
-                                horizontal = 10.dp,
-                                vertical = 7.dp
-                            ),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = if (activity.completed) {
+                        status.startsWith("איחור") ->
+                            Color(0xFFFFE5E1)
+                        else ->
+                            SoftSun
+                    }
+                ) {
+                    Text(
+                        status,
+                        modifier = Modifier.padding(
+                            horizontal = 10.dp,
+                            vertical = 7.dp
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = when {
+                            status.startsWith("צא עכשיו") ->
                                 Color(0xFF2E7D56)
-                            } else {
-                                Sky
-                            },
-                            maxLines = 1
+                            status.startsWith("איחור") ->
+                                Coral
+                            else ->
+                                Color(0xFF8F6500)
+                        }
+                    )
+                }
+            }
+
+            val origin = previousActivity
+                ?.location
+                ?.ifBlank { previousActivity.name }
+                .orEmpty()
+            val destination = next.location
+                .ifBlank { next.name }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = {
+                        onOpenUrl(
+                            "https://www.google.com/maps/dir/?api=1" +
+                                (
+                                    if (origin.isNotBlank()) {
+                                        "&origin=${Uri.encode(origin)}"
+                                    } else {
+                                        ""
+                                    }
+                                    ) +
+                                "&destination=${Uri.encode(destination)}"
                         )
-                    }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    GoogleMapsBrandIcon(Modifier.size(24.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Maps")
+                }
 
-                    Spacer(Modifier.width(10.dp))
+                FilledTonalButton(
+                    onClick = {
+                        onOpenUrl(
+                            "https://waze.com/ul?q=" +
+                                Uri.encode(destination) +
+                                "&navigate=yes"
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    WazeBrandIcon(Modifier.size(24.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Waze")
+                }
+            }
+        }
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                activity.name,
-                                modifier = Modifier.weight(1f),
-                                fontWeight = FontWeight.Bold,
-                                color = Navy,
-                                maxLines = 2
-                            )
+        Button(
+            onClick = onCompleteCurrent,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text(
+                if (currentActivity != null) {
+                    "סיימתי את הפעילות"
+                } else {
+                    "סמן את הפעילות כהושלמה"
+                }
+            )
+        }
+    }
+}
 
-                            if (activity.completed) {
-                                Spacer(Modifier.width(6.dp))
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color(0xFFD9F3E4)
-                                ) {
-                                    Text(
-                                        "✓",
-                                        modifier = Modifier.padding(
-                                            horizontal = 8.dp,
-                                            vertical = 4.dp
-                                        ),
-                                        color = Color(0xFF2E7D56),
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
+@Composable
+private fun TodayActivityRow(
+    activity: ActivityItem,
+    isCurrent: Boolean,
+    isNext: Boolean
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = when {
+            activity.completed -> SoftMint
+            isCurrent -> SoftBlue
+            isNext -> SoftAqua
+            else -> CardWhite
+        },
+        border = BorderStroke(
+            if (isCurrent || isNext) 2.dp else 1.dp,
+            when {
+                activity.completed -> Color(0xFFBFE5D0)
+                isCurrent -> Sky
+                isNext -> Aqua
+                else -> Color(0xFFE3E9F0)
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = when {
+                    activity.completed -> Color(0xFFD9F3E4)
+                    isCurrent -> Color(0xFFDCEBFB)
+                    else -> SoftBlue
+                }
+            ) {
+                Text(
+                    text = activity.time.ifBlank { "--:--" },
+                    modifier = Modifier.padding(
+                        horizontal = 10.dp,
+                        vertical = 7.dp
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = when {
+                        activity.completed -> Color(0xFF2E7D56)
+                        else -> Sky
+                    },
+                    maxLines = 1
+                )
+            }
 
-                        if (activity.location.isNotBlank()) {
-                            Text(
-                                activity.location,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextSecondary,
-                                maxLines = 2
-                            )
-                        }
-                    }
+            Spacer(Modifier.width(10.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    activity.name,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy,
+                    maxLines = 2
+                )
+
+                if (activity.location.isNotBlank()) {
+                    Text(
+                        activity.location,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                        maxLines = 2
+                    )
+                }
+
+                when {
+                    activity.completed -> Text(
+                        "הושלמה",
+                        color = Color(0xFF2E7D56),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    isCurrent -> Text(
+                        "מתבצעת עכשיו",
+                        color = Sky,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    isNext -> Text(
+                        "הפעילות הבאה",
+                        color = Aqua,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            if (activity.completed) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFFD9F3E4)
+                ) {
+                    Text(
+                        "✓",
+                        modifier = Modifier.padding(
+                            horizontal = 8.dp,
+                            vertical = 4.dp
+                        ),
+                        color = Color(0xFF2E7D56),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -454,8 +718,58 @@ private fun activityClockMinutesToday(value: String): Int? {
     val match = Regex("""(\d{1,2}):(\d{2})""").find(value)
         ?: return null
 
-    val hour = match.groupValues[1].toIntOrNull() ?: return null
-    val minute = match.groupValues[2].toIntOrNull() ?: return null
+    val hour = match.groupValues[1].toIntOrNull()
+        ?: return null
+    val minute = match.groupValues[2].toIntOrNull()
+        ?: return null
 
     return hour * 60 + minute
 }
+
+private fun activityDurationMinutesToday(value: String): Int {
+    val normalized = value.trim().lowercase()
+
+    val hours = Regex("""(\d+(?:\.\d+)?)\s*(?:שעות|שעה|hours?|hrs?|h)""")
+        .find(normalized)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toDoubleOrNull()
+        ?: 0.0
+
+    val minutes = Regex("""(\d+)\s*(?:דקות|דקה|minutes?|mins?|m)""")
+        .find(normalized)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+        ?: 0
+
+    val total = (hours * 60).toInt() + minutes
+    return if (total > 0) total else 60
+}
+
+private fun activityTimeRangeToday(
+    activity: ActivityItem
+): String {
+    val start = activityClockMinutesToday(activity.time)
+        ?: return activity.time.ifBlank { "--:--" }
+    val end = start +
+        activityDurationMinutesToday(activity.duration)
+
+    return "${minutesToClockToday(start)}–${minutesToClockToday(end)}"
+}
+
+private fun minutesToClockToday(value: Int): String {
+    val normalized = ((value % (24 * 60)) + (24 * 60)) % (24 * 60)
+    return "%02d:%02d".format(
+        normalized / 60,
+        normalized % 60
+    )
+}
+
+private fun transitionEmoji(mode: String): String =
+    when (mode) {
+        "walk" -> "🚶"
+        "drive" -> "🚗"
+        "transit" -> "🚌"
+        else -> "➡️"
+    }

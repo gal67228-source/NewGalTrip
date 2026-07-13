@@ -20,8 +20,8 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 54
-        versionName '4.0.3-persistent-route-cache'
+        versionCode 60
+        versionName '4.1.0-today-dashboard'
 
         buildConfigField "String", "ROUTES_WORKER_URL",
             "\"${routesWorkerUrl.replace('\\', '\\\\').replace('\"', '\\\"')}\""
