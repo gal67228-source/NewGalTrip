@@ -1,0 +1,7 @@
+name = "gal-family-trips-routes"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# Secrets required on the deployed Worker:
+# GOOGLE_ROUTES_API_KEY
+# APP_ROUTES_TOKEN

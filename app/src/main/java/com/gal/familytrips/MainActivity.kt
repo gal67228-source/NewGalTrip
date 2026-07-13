@@ -1407,6 +1407,8 @@ private fun DayDetailScreen(
     }
     val timelineListState = rememberLazyListState()
     val timelineScope = rememberCoroutineScope()
+    var routesRefreshing by remember(day.id) { mutableStateOf(false) }
+    var routesMessage by remember(day.id) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(day.activities, draggingActivityId) {
         if (draggingActivityId == null) {
@@ -1415,6 +1417,45 @@ private fun DayDetailScreen(
             if (incomingIds != localIds || day.activities != orderedActivities.toList()) {
                 orderedActivities.clear()
                 orderedActivities.addAll(day.activities)
+            }
+        }
+    }
+
+    val routeInputSignature = remember(day.activities) {
+        day.activities.joinToString("|") {
+            listOf(
+                it.id,
+                it.location,
+                it.latitude?.toString().orEmpty(),
+                it.longitude?.toString().orEmpty(),
+                it.transitionMode,
+                it.transitionAutomatic.toString(),
+                it.routeCacheKey
+            ).joinToString(":")
+        }
+    }
+
+    LaunchedEffect(day.id, routeInputSignature, trip.offlineMode) {
+        if (
+            !trip.offlineMode &&
+            GoogleRoutesClient.isConfigured() &&
+            day.activities.size >= 2 &&
+            draggingActivityId == null
+        ) {
+            routesRefreshing = true
+            val routedDay = GoogleRoutesClient.refreshDay(day)
+            val normalized = validateAndNormalizeDayTimeline(routedDay)
+            routesRefreshing = false
+
+            if (normalized.activities != day.activities) {
+                routesMessage = "זמני המעבר עודכנו לפי Google Maps"
+                onTripChange(
+                    trip.copy(
+                        days = trip.days.map {
+                            if (it.id == day.id) normalized else it
+                        }
+                    )
+                )
             }
         }
     }
@@ -1512,6 +1553,77 @@ private fun DayDetailScreen(
             }
             Spacer(Modifier.height(8.dp))
         }
+
+        SectionCard(
+            containerColor = if (GoogleRoutesClient.isConfigured()) {
+                SoftAqua
+            } else {
+                SoftSun
+            }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (GoogleRoutesClient.isConfigured()) {
+                            "Google Routes פעיל"
+                        } else {
+                            "Google Routes לא הוגדר"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    Text(
+                        routesMessage ?: if (GoogleRoutesClient.isConfigured()) {
+                            "המסלולים מתעדכנים אוטומטית ונשמרים במכשיר."
+                        } else {
+                            "יש להגדיר ROUTES_WORKER_URL ו-ROUTES_APP_TOKEN בבנייה."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+                if (routesRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else if (GoogleRoutesClient.isConfigured()) {
+                    IconButton(
+                        onClick = {
+                            timelineScope.launch {
+                                routesRefreshing = true
+                                val cleared = day.copy(
+                                    activities = day.activities.mapIndexed { index, item ->
+                                        if (index == 0) item else item.copy(
+                                            routeCacheKey = "",
+                                            routeUpdatedAt = 0L
+                                        )
+                                    }
+                                )
+                                val routed = GoogleRoutesClient.refreshDay(cleared)
+                                val normalized = validateAndNormalizeDayTimeline(routed)
+                                routesRefreshing = false
+                                routesMessage = "המסלולים רועננו"
+                                onTripChange(
+                                    trip.copy(
+                                        days = trip.days.map {
+                                            if (it.id == day.id) normalized else it
+                                        }
+                                    )
+                                )
+                            }
+                        }
+                    ) {
+                        Text("↻", fontWeight = FontWeight.Bold, color = Aqua)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2321,72 +2433,170 @@ private fun TransitionTimeCard(
     val icon = transitionModeIcon(mode)
     val label = transitionModeLabel(mode)
 
+    val origin = previous.location
+        .ifBlank { previous.name }
+    val destination = current.location
+        .ifBlank { current.name }
+
+    val travelMode = when (mode) {
+        "walk" -> "walking"
+        "drive" -> "driving"
+        else -> "transit"
+    }
+
+    val mapsDirectionsUrl =
+        "https://www.google.com/maps/dir/?api=1" +
+            "&origin=${Uri.encode(origin)}" +
+            "&destination=${Uri.encode(destination)}" +
+            "&travelmode=$travelMode"
+
+    val wazeUrl =
+        "https://waze.com/ul?q=" +
+            Uri.encode(destination) +
+            "&navigate=yes"
+
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = SoftAqua,
         border = BorderStroke(1.dp, Color(0xFFCFE8E8))
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Text(
-                icon,
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            Spacer(Modifier.width(8.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    if (minutes == 0) {
-                        "ללא זמן מעבר"
-                    } else {
-                        "$minutes דקות מעבר"
-                    },
-                    fontWeight = FontWeight.Bold,
-                    color = Navy
+                    icon,
+                    style = MaterialTheme.typography.titleMedium
                 )
-                Text(
-                    "$label · ${previous.name} ← ${current.name}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                    maxLines = 1
-                )
-            }
 
-            IconButton(
-                onClick = {
-                    val origin = previous.location
-                        .ifBlank { previous.name }
-                    val destination = current.location
-                        .ifBlank { current.name }
+                Spacer(Modifier.width(8.dp))
 
-                    val travelMode = when (mode) {
-                        "walk" -> "walking"
-                        "drive" -> "driving"
-                        else -> "transit"
-                    }
-
-                    onOpenUrl(
-                        "https://www.google.com/maps/dir/?api=1" +
-                            "&origin=${Uri.encode(origin)}" +
-                            "&destination=${Uri.encode(destination)}" +
-                            "&travelmode=$travelMode"
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (minutes == 0) {
+                            "ללא זמן מעבר"
+                        } else {
+                            "$minutes דקות מעבר"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
                     )
-                },
-                modifier = Modifier.size(38.dp)
-            ) {
-                GoogleMapsBrandIcon(Modifier.size(29.dp))
+                    Text(
+                        "$label · ${previous.name} ← ${current.name}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                        maxLines = 1
+                    )
+                    if (current.routeDistanceMeters > 0) {
+                        Text(
+                            routeDistanceText(current.routeDistanceMeters) +
+                                if (current.routeSource == "google") " · Google Maps" else " · הערכה",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (current.routeSource == "google") Color(0xFF2E7D56) else TextSecondary
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    SmallEditIcon(Modifier.size(27.dp))
+                }
             }
 
-            IconButton(
-                onClick = onEdit,
-                modifier = Modifier.size(36.dp)
+            if (mode == "transit") {
+                Surface(
+                    shape = RoundedCornerShape(11.dp),
+                    color = CardWhite,
+                    border = BorderStroke(
+                        1.dp,
+                        Color(0xFFD9E7EA)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(
+                            horizontal = 10.dp,
+                            vertical = 8.dp
+                        ),
+                        verticalArrangement =
+                            Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            "פירוט תחבורה ציבורית",
+                            fontWeight = FontWeight.Bold,
+                            color = Navy,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        if (current.transitionDetails.isNotBlank()) {
+                            Text(
+                                current.transitionDetails,
+                                color = TextSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else {
+                            Text(
+                                "פתח Google Maps להצגת קווים, תחנות וזמני יציאה מעודכנים.",
+                                color = TextSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            } else if (current.transitionDetails.isNotBlank()) {
+                Text(
+                    current.transitionDetails,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            if (current.routeStatus.isNotBlank()) {
+                Text(
+                    current.routeStatus,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (current.routeSource == "google") Color(0xFF2E7D56) else Coral
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SmallEditIcon(Modifier.size(27.dp))
+                FilledTonalButton(
+                    onClick = {
+                        onOpenUrl(mapsDirectionsUrl)
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    GoogleMapsBrandIcon(
+                        Modifier.size(25.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Maps")
+                }
+
+                FilledTonalButton(
+                    onClick = {
+                        onOpenUrl(wazeUrl)
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    WazeBrandIcon(
+                        Modifier.size(25.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Waze")
+                }
             }
         }
     }
@@ -2938,6 +3148,7 @@ private fun QuickActivityDialog(
     var transitionMode by remember { mutableStateOf("auto") }
     var transitionAutomatic by remember { mutableStateOf(true) }
     var transitionMinutesText by remember { mutableStateOf("0") }
+    var transitionDetails by remember { mutableStateOf("") }
     var selectedLatitude by remember { mutableStateOf<Double?>(null) }
     var selectedLongitude by remember { mutableStateOf<Double?>(null) }
     var selectedSuggestionId by remember { mutableStateOf<String?>(null) }
@@ -3492,6 +3703,28 @@ private fun QuickActivityDialog(
                                     color = TextSecondary
                                 )
                             }
+
+                            if (transitionMode == "transit") {
+                                OutlinedTextField(
+                                    value = transitionDetails,
+                                    onValueChange = {
+                                        transitionDetails = it
+                                    },
+                                    label = {
+                                        Text(
+                                            "קווים / תחנות / הוראות"
+                                        )
+                                    },
+                                    supportingText = {
+                                        Text(
+                                            "לדוגמה: מטרו M2 מתחנת Deák Ferenc tér, ירידה ב-Batthyány tér"
+                                        )
+                                    },
+                                    minLines = 2,
+                                    maxLines = 4,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                     }
                 }
@@ -3515,12 +3748,6 @@ private fun QuickActivityDialog(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextSecondary
                             )
-                            if (selectedPreset.transport.isNotBlank()) {
-                                Text(
-                                    "אמצעי הגעה: ${selectedPreset.transport}",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
                             if (selectedPreset.notes.isNotBlank()) {
                                 Text(
                                     selectedPreset.notes,
@@ -3579,18 +3806,14 @@ private fun QuickActivityDialog(
                         }
                     }
 
-                    val directionsText = previousLocation?.let {
-                        "ניווט מ-$it אל $destinationQuery"
-                    }.orEmpty()
-
                     onConfirm(
                         ActivityItem(
                             id = UUID.randomUUID().toString(),
                             time = time.trim(),
                             name = name.trim(),
                             location = location.trim(),
-                            transport = selectedPreset.transport,
-                            directions = directionsText,
+                            transport = "",
+                            directions = "",
                             duration = duration.trim(),
                             cost = "",
                             notes = selectedPreset.notes,
@@ -3605,7 +3828,9 @@ private fun QuickActivityDialog(
                                     ?.coerceAtLeast(0)
                                     ?: 0,
                             transitionAutomatic =
-                                transitionAutomatic
+                                transitionAutomatic,
+                            transitionDetails =
+                                transitionDetails.trim()
                         )
                     )
                 }
@@ -3808,12 +4033,28 @@ private fun findTimelineConflict(
     return null
 }
 
+private fun routeDistanceText(distanceMeters: Int): String {
+    return if (distanceMeters < 1000) {
+        "$distanceMeters מטר"
+    } else {
+        "%.1f ק״מ".format(distanceMeters / 1000.0)
+    }
+}
+
 private fun resolveTransitionMinutes(
     previous: ActivityItem,
     current: ActivityItem
 ): Int {
     if (!current.transitionAutomatic) {
         return current.transitionMinutes.coerceAtLeast(0)
+    }
+
+    if (
+        current.routeSource == "google" &&
+        current.routeCacheKey.isNotBlank() &&
+        current.transitionMinutes > 0
+    ) {
+        return current.transitionMinutes
     }
 
     if (
@@ -3889,30 +4130,6 @@ private fun resolvedTransitionMode(
 ): String {
     if (current.transitionMode != "auto") {
         return current.transitionMode
-    }
-
-    val transportText = (
-        current.transport + " " +
-            current.directions
-        ).lowercase()
-
-    when {
-        listOf("walk", "walking", "הליכה", "רגל").any {
-            transportText.contains(it)
-        } -> return "walk"
-
-        listOf(
-            "car", "taxi", "drive", "רכב", "מונית"
-        ).any {
-            transportText.contains(it)
-        } -> return "drive"
-
-        listOf(
-            "bus", "train", "metro", "tram",
-            "אוטובוס", "רכבת", "מטרו", "תחבורה"
-        ).any {
-            transportText.contains(it)
-        } -> return "transit"
     }
 
     val distance = knownDistanceKm ?: run {
@@ -4294,8 +4511,6 @@ private fun ActivityEditorDialog(
     var time by remember(activity?.id) { mutableStateOf(activity?.time.orEmpty()) }
     var name by remember(activity?.id) { mutableStateOf(activity?.name.orEmpty()) }
     var location by remember(activity?.id) { mutableStateOf(activity?.location.orEmpty()) }
-    var transport by remember(activity?.id) { mutableStateOf(activity?.transport.orEmpty()) }
-    var directions by remember(activity?.id) { mutableStateOf(activity?.directions.orEmpty()) }
     var duration by remember(activity?.id) { mutableStateOf(activity?.duration.orEmpty()) }
     var cost by remember(activity?.id) { mutableStateOf(activity?.cost.orEmpty()) }
     var notes by remember(activity?.id) { mutableStateOf(activity?.notes.orEmpty()) }
@@ -4313,6 +4528,11 @@ private fun ActivityEditorDialog(
             (activity?.transitionMinutes ?: 0).toString()
         )
     }
+    var transitionDetails by remember(activity?.id) {
+        mutableStateOf(
+            activity?.transitionDetails.orEmpty()
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -4328,8 +4548,6 @@ private fun ActivityEditorDialog(
                 }
                 item { OutlinedTextField(name, { name = it }, label = { Text("שם הפעילות") }) }
                 item { OutlinedTextField(location, { location = it }, label = { Text("מיקום") }) }
-                item { OutlinedTextField(transport, { transport = it }, label = { Text("אמצעי הגעה") }) }
-                item { OutlinedTextField(directions, { directions = it }, label = { Text("קו / הוראות") }) }
                 item {
                     SectionCard(containerColor = SoftAqua) {
                         Text(
@@ -4388,6 +4606,41 @@ private fun ActivityEditorDialog(
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
+
+                        if (transitionMode == "transit") {
+                            OutlinedTextField(
+                                value = transitionDetails,
+                                onValueChange = {
+                                    transitionDetails = it
+                                },
+                                label = {
+                                    Text(
+                                        "קווים / תחנות / הוראות"
+                                    )
+                                },
+                                supportingText = {
+                                    Text(
+                                        "הפירוט יוצג בכרטיס המעבר"
+                                    )
+                                },
+                                minLines = 2,
+                                maxLines = 4,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = transitionDetails,
+                                onValueChange = {
+                                    transitionDetails = it
+                                },
+                                label = {
+                                    Text("הערת מעבר")
+                                },
+                                minLines = 1,
+                                maxLines = 3,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
                 item { OutlinedTextField(duration, { duration = it }, label = { Text("משך") }) }
@@ -4424,8 +4677,8 @@ private fun ActivityEditorDialog(
                             time = time,
                             name = name,
                             location = location,
-                            transport = transport,
-                            directions = directions,
+                            transport = "",
+                            directions = "",
                             duration = duration,
                             cost = cost,
                             notes = notes,
@@ -4441,7 +4694,9 @@ private fun ActivityEditorDialog(
                                     ?.coerceAtLeast(0)
                                     ?: 0,
                             transitionAutomatic =
-                                transitionAutomatic
+                                transitionAutomatic,
+                            transitionDetails =
+                                transitionDetails.trim()
                         )
                     )
                 }

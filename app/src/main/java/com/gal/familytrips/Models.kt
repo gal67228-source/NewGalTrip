@@ -21,7 +21,13 @@ data class ActivityItem(
     val longitude: Double? = null,
     val transitionMode: String = "auto",
     val transitionMinutes: Int = 0,
-    val transitionAutomatic: Boolean = true
+    val transitionAutomatic: Boolean = true,
+    val transitionDetails: String = "",
+    val routeDistanceMeters: Int = 0,
+    val routeSource: String = "estimate",
+    val routeStatus: String = "",
+    val routeCacheKey: String = "",
+    val routeUpdatedAt: Long = 0L
 )
 
 @Serializable

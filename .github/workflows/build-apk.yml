@@ -59,8 +59,20 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Verify Google Routes configuration
+        shell: bash
+        env:
+          ROUTES_WORKER_URL: ${{ secrets.ROUTES_WORKER_URL }}
+          ROUTES_APP_TOKEN: ${{ secrets.ROUTES_APP_TOKEN }}
+        run: |
+          test -n "$ROUTES_WORKER_URL" || { echo "::error::Missing ROUTES_WORKER_URL secret"; exit 1; }
+          test -n "$ROUTES_APP_TOKEN" || { echo "::error::Missing ROUTES_APP_TOKEN secret"; exit 1; }
+
       - name: Build APK
         shell: bash
+        env:
+          ROUTES_WORKER_URL: ${{ secrets.ROUTES_WORKER_URL }}
+          ROUTES_APP_TOKEN: ${{ secrets.ROUTES_APP_TOKEN }}
         run: |
           set -o pipefail
           gradle --no-daemon --stacktrace clean assembleDebug 2>&1 | tee build.log
@@ -75,7 +87,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gal-Family-Trips-V8-0-Transition-Times-APK
+          name: Gal-Family-Trips-V8-0-2-Google-Routes-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

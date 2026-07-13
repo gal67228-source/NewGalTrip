@@ -5,6 +5,13 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
+def routesWorkerUrl = project.findProperty("ROUTES_WORKER_URL") \
+    ?: System.getenv("ROUTES_WORKER_URL") \
+    ?: ""
+def routesAppToken = project.findProperty("ROUTES_APP_TOKEN") \
+    ?: System.getenv("ROUTES_APP_TOKEN") \
+    ?: ""
+
 android {
     namespace 'com.gal.familytrips'
     compileSdk 35
@@ -13,8 +20,13 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 50
-        versionName '4.0.0-transition-times'
+        versionCode 52
+        versionName '4.0.2-google-routes'
+
+        buildConfigField "String", "ROUTES_WORKER_URL",
+            "\"${routesWorkerUrl.replace('\\', '\\\\').replace('\"', '\\\"')}\""
+        buildConfigField "String", "ROUTES_APP_TOKEN",
+            "\"${routesAppToken.replace('\\', '\\\\').replace('\"', '\\\"')}\""
     }
 
     buildFeatures {
