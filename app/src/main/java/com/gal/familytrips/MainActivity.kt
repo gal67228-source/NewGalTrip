@@ -4123,7 +4123,7 @@ private fun resolveTransitionMinutes(
     ).coerceIn(3, 180)
 }
 
-private fun resolvedTransitionMode(
+internal fun resolvedTransitionMode(
     previous: ActivityItem,
     current: ActivityItem,
     knownDistanceKm: Double? = null
