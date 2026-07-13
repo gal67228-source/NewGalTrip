@@ -1577,7 +1577,7 @@ private fun DayDetailScreen(
                     )
                     Text(
                         routesMessage ?: if (GoogleRoutesClient.isConfigured()) {
-                            "המסלולים מתעדכנים אוטומטית ונשמרים במכשיר."
+                            "המסלולים נשמרים קבוע ומחושבים מחדש רק לאחר שינוי או רענון ידני."
                         } else {
                             "יש להגדיר ROUTES_WORKER_URL ו-ROUTES_APP_TOKEN בבנייה."
                         },
@@ -1606,7 +1606,7 @@ private fun DayDetailScreen(
                                 val routed = GoogleRoutesClient.refreshDay(cleared)
                                 val normalized = validateAndNormalizeDayTimeline(routed)
                                 routesRefreshing = false
-                                routesMessage = "המסלולים רועננו"
+                                routesMessage = "המסלולים חושבו מחדש ונשמרו"
                                 onTripChange(
                                     trip.copy(
                                         days = trip.days.map {

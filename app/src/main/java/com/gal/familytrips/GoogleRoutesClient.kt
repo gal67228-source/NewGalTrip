@@ -10,8 +10,6 @@ import java.security.MessageDigest
 import java.util.Locale
 import kotlin.math.ceil
 
-private const val ROUTE_CACHE_MAX_AGE_MS = 12L * 60L * 60L * 1000L
-
 data class GoogleRouteResult(
     val durationMinutes: Int,
     val distanceMeters: Int,
@@ -43,12 +41,17 @@ object GoogleRoutesClient {
 
             val mode = resolvedTransitionMode(previous, current)
             val cacheKey = routeCacheKey(previous, current, mode)
-            val fresh = current.routeSource == "google" &&
+            val savedRouteMatches =
                 current.routeCacheKey == cacheKey &&
-                System.currentTimeMillis() - current.routeUpdatedAt <
-                    ROUTE_CACHE_MAX_AGE_MS
+                    current.routeSource in setOf(
+                        "google",
+                        "estimate"
+                    )
 
-            if (fresh) {
+            // Saved route data does not expire automatically.
+            // Recalculate only when the route signature changes
+            // or after an explicit manual refresh.
+            if (savedRouteMatches) {
                 previous = current
                 continue
             }
