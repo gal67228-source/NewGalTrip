@@ -8255,12 +8255,59 @@ private fun DocumentsScreen(
     onTripChange: (Trip) -> Unit,
     modifier: Modifier
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var pendingRequirement by remember { mutableStateOf<DocumentRequirement?>(null) }
-    var pendingPassengerName by remember { mutableStateOf("") }
-    var askPassengerName by remember { mutableStateOf(false) }
+    val context =
+        androidx.compose.ui.platform.LocalContext.current
 
-    val requirements = suggestedDocumentRequirements(trip)
+    var pendingRequirement by remember {
+        mutableStateOf<DocumentRequirement?>(null)
+    }
+    var pendingPassengerName by remember {
+        mutableStateOf("")
+    }
+    var askPassengerName by remember {
+        mutableStateOf(false)
+    }
+    var selectedCategory by remember {
+        mutableStateOf("הכול")
+    }
+
+    val requirements =
+        suggestedDocumentRequirements(trip)
+
+    val categories = listOf("הכול") +
+        requirements.map { it.type }
+            .distinct()
+            .sorted()
+
+    val visibleRequirements = if (
+        selectedCategory == "הכול"
+    ) {
+        requirements
+    } else {
+        requirements.filter {
+            it.type == selectedCategory
+        }
+    }
+
+    fun matchingDocuments(
+        requirement: DocumentRequirement
+    ): List<TripDocument> =
+        trip.documents.filter { document ->
+            document.requirementKey ==
+                requirement.key ||
+                document.notes ==
+                requirement.key ||
+                document.name.contains(
+                    requirement.title,
+                    ignoreCase = true
+                )
+        }
+
+    val completedCount = requirements.count {
+        matchingDocuments(it).isNotEmpty()
+    }
+    val missingCount =
+        requirements.size - completedCount
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -8269,18 +8316,23 @@ private fun DocumentsScreen(
 
         if (uri != null && requirement != null) {
             runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+                context.contentResolver
+                    .takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
             }
 
-            val baseName = uri.lastPathSegment ?: requirement.title
+            val baseName =
+                uri.lastPathSegment ?: requirement.title
+            val passenger =
+                pendingPassengerName.trim()
+
             val finalName = if (
-                requirement.type == "טיסות" &&
-                pendingPassengerName.isNotBlank()
+                requirement.supportsPassengers &&
+                passenger.isNotBlank()
             ) {
-                "$pendingPassengerName - $baseName"
+                "$passenger - $baseName"
             } else {
                 baseName
             }
@@ -8291,12 +8343,25 @@ private fun DocumentsScreen(
                 uri = uri.toString(),
                 type = requirement.type,
                 notes = requirement.key,
-                passengerName = pendingPassengerName.trim()
+                passengerName = passenger,
+                requirementKey = requirement.key,
+                bookingId = requirement.bookingId,
+                documentRole = when {
+                    requirement.type == "טיסות" ->
+                        "כרטיס / אישור טיסה"
+                    requirement.type == "מלונות" ->
+                        "Voucher / אישור הזמנה"
+                    else -> "מסמך הזמנה"
+                },
+                offlineAvailable = true,
+                addedAt =
+                    System.currentTimeMillis()
             )
 
             onTripChange(
                 trip.copy(
-                    documents = trip.documents + document
+                    documents =
+                        trip.documents + document
                 )
             )
         }
@@ -8305,10 +8370,12 @@ private fun DocumentsScreen(
         pendingPassengerName = ""
     }
 
-    fun startDocumentUpload(requirement: DocumentRequirement) {
+    fun startDocumentUpload(
+        requirement: DocumentRequirement
+    ) {
         pendingRequirement = requirement
 
-        if (requirement.type == "טיסות") {
+        if (requirement.supportsPassengers) {
             askPassengerName = true
         } else {
             pendingPassengerName = ""
@@ -8319,219 +8386,412 @@ private fun DocumentsScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 24.dp)
+            .padding(
+                horizontal = 14.dp,
+                vertical = 10.dp
+            ),
+        verticalArrangement =
+            Arrangement.spacedBy(10.dp),
+        contentPadding =
+            PaddingValues(bottom = 28.dp)
     ) {
         item {
             GradientHeader(
-                title = "מסמכים",
-                subtitle = "נוצר אוטומטית מהמלונות והפעילויות",
-                emoji = "🎫",
+                title = "מרכז מסמכים",
+                subtitle =
+                    "טיסות, מלונות, כרטיסים ושוברים",
+                emoji = "📄",
                 start = Mint,
                 end = Color(0xFF378A63)
             )
+        }
 
-            val completed = requirements.count { requirement ->
-                trip.documents.any { document ->
-                    document.notes == requirement.key ||
-                        document.name.contains(
-                            requirement.title,
-                            ignoreCase = true
-                        )
-                }
-            }
-
+        item {
             SectionCard(containerColor = SoftMint) {
-                Text(
-                    "$completed מתוך ${requirements.size} סוגי מסמכים נוספו",
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF276B4A)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "$completedCount מתוך ${requirements.size} מוכנים",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF276B4A)
+                        )
+                        Text(
+                            if (missingCount == 0) {
+                                "כל המסמכים הנדרשים קיימים"
+                            } else {
+                                "$missingCount דרישות עדיין חסרות"
+                            },
+                            style =
+                                MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+
+                    Text(
+                        if (requirements.isEmpty()) {
+                            "0%"
+                        } else {
+                            "${completedCount * 100 / requirements.size}%"
+                        },
+                        style =
+                            MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF276B4A)
+                    )
+                }
+
                 LinearProgressIndicator(
                     progress = {
                         if (requirements.isEmpty()) {
                             0f
                         } else {
-                            completed.toFloat() / requirements.size.toFloat()
+                            completedCount.toFloat() /
+                                requirements.size.toFloat()
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     color = Mint,
                     trackColor = CardWhite
                 )
+
+                Text(
+                    "המסמכים נשמרים עם הרשאת גישה קבועה וזמינים גם לאחר הפעלה מחדש.",
+                    style =
+                        MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
             }
         }
 
-        items(requirements, key = { it.key }) { requirement ->
-            val matching = trip.documents.filter {
-                it.notes == requirement.key ||
-                    it.name.contains(
-                        requirement.title,
-                        ignoreCase = true
+        item {
+            LazyRow(
+                horizontalArrangement =
+                    Arrangement.spacedBy(7.dp)
+            ) {
+                items(categories) { category ->
+                    FilterChip(
+                        selected =
+                            selectedCategory == category,
+                        onClick = {
+                            selectedCategory = category
+                        },
+                        label = {
+                            Text(
+                                "${documentCategoryEmoji(category)} $category"
+                            )
+                        }
                     )
+                }
+            }
+        }
+
+        val grouped = visibleRequirements
+            .groupBy { it.type }
+
+        grouped.forEach {
+            (type, categoryRequirements) ->
+
+            item(key = "header-$type") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+                    Text(
+                        documentCategoryEmoji(type),
+                        style =
+                            MaterialTheme.typography.titleLarge
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        type,
+                        style =
+                            MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    Spacer(Modifier.weight(1f))
+                    val categoryReady =
+                        categoryRequirements.count {
+                            requirement ->
+                            matchingDocuments(requirement)
+                                .isNotEmpty()
+                        }
+                    Text(
+                        "$categoryReady/${categoryRequirements.size}",
+                        color = TextSecondary,
+                        style =
+                            MaterialTheme.typography.bodySmall
+                    )
+                }
             }
 
-            val isAdded = matching.isNotEmpty()
-            val isFlight = requirement.type == "טיסות"
+            items(
+                categoryRequirements,
+                key = { it.key }
+            ) { requirement ->
+                val matching =
+                    matchingDocuments(requirement)
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isAdded) SoftMint else CardWhite
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    if (isAdded) {
-                        Color(0xFFBEE6CF)
-                    } else {
-                        Color(0xFFE3E9F0)
+                val passengerGroups = matching
+                    .filter {
+                        it.passengerName.isNotBlank()
                     }
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .groupBy { it.passengerName }
+
+                val status = when {
+                    matching.isEmpty() -> "חסר"
+                    requirement.supportsPassengers &&
+                        passengerGroups.isNotEmpty() &&
+                        matching.size >
+                            passengerGroups.size ->
+                        "מלא"
+                    requirement.supportsPassengers &&
+                        passengerGroups.isNotEmpty() ->
+                        "חלקי"
+                    else -> "מלא"
+                }
+
+                val statusColor = when (status) {
+                    "מלא" -> Color(0xFF2E7D56)
+                    "חלקי" -> Color(0xFF9A6A00)
+                    else -> Coral
+                }
+
+                val statusBackground =
+                    when (status) {
+                        "מלא" -> SoftMint
+                        "חלקי" -> SoftSun
+                        else -> CardWhite
+                    }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor =
+                                statusBackground
+                        ),
+                    border = BorderStroke(
+                        1.dp,
+                        when (status) {
+                            "מלא" ->
+                                Color(0xFFBEE6CF)
+                            "חלקי" ->
+                                Color(0xFFF0D38A)
+                            else ->
+                                Color(0xFFE3E9F0)
+                        }
+                    ),
+                    elevation =
+                        CardDefaults.cardElevation(
+                            defaultElevation = 2.dp
+                        )
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (isAdded) "✅" else "📄")
-                        Spacer(Modifier.width(8.dp))
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement =
+                            Arrangement.spacedBy(9.dp)
+                    ) {
+                        Row(
+                            verticalAlignment =
+                                Alignment.CenterVertically
+                        ) {
+                            Text(
+                                documentCategoryEmoji(
+                                    requirement.type
+                                ),
+                                style =
+                                    MaterialTheme.typography.titleLarge
+                            )
+                            Spacer(Modifier.width(9.dp))
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                requirement.title,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                requirement.description,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary
-                            )
-                            Text(
-                                requirement.type,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Mint
-                            )
-
-                            if (isFlight) {
+                            Column(
+                                modifier =
+                                    Modifier.weight(1f)
+                            ) {
                                 Text(
-                                    "אפשר להוסיף מסמך נפרד לכל נוסע",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Sky
+                                    requirement.title,
+                                    fontWeight =
+                                        FontWeight.Bold,
+                                    color = Navy
                                 )
+                                Text(
+                                    requirement.description,
+                                    style =
+                                        MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+
+                                if (
+                                    requirement
+                                        .supportsPassengers
+                                ) {
+                                    Text(
+                                        "אפשר לצרף כמה מסמכים לכל נוסע",
+                                        style =
+                                            MaterialTheme.typography.labelSmall,
+                                        color = Sky
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                shape =
+                                    RoundedCornerShape(10.dp),
+                                color = statusColor.copy(
+                                    alpha = 0.12f
+                                )
+                            ) {
+                                Text(
+                                    status,
+                                    modifier =
+                                        Modifier.padding(
+                                            horizontal = 9.dp,
+                                            vertical = 5.dp
+                                        ),
+                                    color = statusColor,
+                                    fontWeight =
+                                        FontWeight.Bold,
+                                    style =
+                                        MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+
+                        if (matching.isNotEmpty()) {
+                            if (
+                                requirement.supportsPassengers &&
+                                passengerGroups.isNotEmpty()
+                            ) {
+                                passengerGroups.forEach {
+                                    (passenger, documents) ->
+                                    Text(
+                                        "$passenger · ${documents.size} מסמכים",
+                                        fontWeight =
+                                            FontWeight.Bold,
+                                        color = Navy,
+                                        style =
+                                            MaterialTheme.typography.bodySmall
+                                    )
+
+                                    documents.forEach {
+                                        document ->
+                                        DocumentFileRow(
+                                            document = document,
+                                            onOpen = {
+                                                openTripDocument(
+                                                    context,
+                                                    document
+                                                )
+                                            },
+                                            onDelete = {
+                                                onTripChange(
+                                                    trip.copy(
+                                                        documents =
+                                                            trip.documents
+                                                                .filterNot {
+                                                                    it.id ==
+                                                                        document.id
+                                                                }
+                                                    )
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+
+                                matching.filter {
+                                    it.passengerName.isBlank()
+                                }.forEach { document ->
+                                    DocumentFileRow(
+                                        document = document,
+                                        onOpen = {
+                                            openTripDocument(
+                                                context,
+                                                document
+                                            )
+                                        },
+                                        onDelete = {
+                                            onTripChange(
+                                                trip.copy(
+                                                    documents =
+                                                        trip.documents
+                                                            .filterNot {
+                                                                it.id ==
+                                                                    document.id
+                                                            }
+                                                )
+                                            )
+                                        }
+                                    )
+                                }
+                            } else {
+                                matching.forEach {
+                                    document ->
+                                    DocumentFileRow(
+                                        document = document,
+                                        onOpen = {
+                                            openTripDocument(
+                                                context,
+                                                document
+                                            )
+                                        },
+                                        onDelete = {
+                                            onTripChange(
+                                                trip.copy(
+                                                    documents =
+                                                        trip.documents
+                                                            .filterNot {
+                                                                it.id ==
+                                                                    document.id
+                                                            }
+                                                )
+                                            )
+                                        }
+                                    )
+                                }
                             }
                         }
 
                         FilledTonalButton(
                             onClick = {
-                                startDocumentUpload(requirement)
+                                startDocumentUpload(
+                                    requirement
+                                )
                             },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (isAdded) {
-                                    CardWhite
-                                } else {
-                                    SoftMint
-                                },
-                                contentColor = Color(0xFF2E7D56)
-                            )
+                            modifier =
+                                Modifier.fillMaxWidth(),
+                            shape =
+                                RoundedCornerShape(12.dp),
+                            colors =
+                                ButtonDefaults
+                                    .filledTonalButtonColors(
+                                        containerColor =
+                                            CardWhite,
+                                        contentColor =
+                                            Color(0xFF2E7D56)
+                                    )
                         ) {
                             Text(
                                 when {
-                                    isFlight && isAdded -> "נוסע נוסף"
-                                    isAdded -> "הוסף עוד"
-                                    else -> "הוספה"
+                                    requirement
+                                        .supportsPassengers &&
+                                        matching.isNotEmpty() ->
+                                        "הוספת מסמך לנוסע"
+                                    matching.isNotEmpty() ->
+                                        "הוספת מסמך נוסף"
+                                    else ->
+                                        "הוספת מסמך"
                                 }
                             )
-                        }
-                    }
-
-                    if (matching.isNotEmpty()) {
-                        matching.forEach { document ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = CardWhite,
-                                border = BorderStroke(
-                                    1.dp,
-                                    Color(0xFFE5EAF0)
-                                )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(9.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (isFlight) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(34.dp)
-                                                .clip(CircleShape)
-                                                .background(SoftBlue),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text("✈️")
-                                        }
-                                        Spacer(Modifier.width(8.dp))
-                                    }
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        if (
-                                            isFlight &&
-                                            document.passengerName.isNotBlank()
-                                        ) {
-                                            Text(
-                                                document.passengerName,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Navy
-                                            )
-                                        }
-
-                                        Text(
-                                            document.name,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = TextSecondary,
-                                            maxLines = 1
-                                        )
-                                    }
-
-                                    TextButton(
-                                        onClick = {
-                                            runCatching {
-                                                context.startActivity(
-                                                    Intent(
-                                                        Intent.ACTION_VIEW,
-                                                        Uri.parse(document.uri)
-                                                    ).addFlags(
-                                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                                    )
-                                                )
-                                            }
-                                        }
-                                    ) {
-                                        Text("פתיחה")
-                                    }
-
-                                    IconButton(
-                                        onClick = {
-                                            onTripChange(
-                                                trip.copy(
-                                                    documents = trip.documents
-                                                        .filterNot {
-                                                            it.id == document.id
-                                                        }
-                                                )
-                                            )
-                                        }
-                                    ) {
-                                        SmallDeleteIcon(
-                                            Modifier.size(28.dp)
-                                        )
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -8539,18 +8799,22 @@ private fun DocumentsScreen(
         }
 
         item {
-            val generalRequirement = DocumentRequirement(
-                key = "general-document",
-                title = "מסמך כללי",
-                type = "כללי",
-                description = "קובץ נוסף שאינו משויך להזמנה"
-            )
+            val generalRequirement =
+                DocumentRequirement(
+                    key = "general-document",
+                    title = "מסמך כללי",
+                    type = "כללי",
+                    description =
+                        "קובץ שאינו משויך להזמנה"
+                )
 
             AccentButton(
                 text = "הוספת מסמך כללי",
                 emoji = "＋",
                 onClick = {
-                    startDocumentUpload(generalRequirement)
+                    startDocumentUpload(
+                        generalRequirement
+                    )
                 },
                 color = Mint,
                 modifier = Modifier.fillMaxWidth()
@@ -8566,11 +8830,134 @@ private fun DocumentsScreen(
                 pendingPassengerName = ""
             },
             onConfirm = { passengerName ->
-                pendingPassengerName = passengerName
+                pendingPassengerName =
+                    passengerName
                 askPassengerName = false
                 launcher.launch(arrayOf("*/*"))
             }
         )
+    }
+}
+
+@Composable
+private fun DocumentFileRow(
+    document: TripDocument,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = CardWhite,
+        border = BorderStroke(
+            1.dp,
+            Color(0xFFE5EAF0)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(9.dp),
+            verticalAlignment =
+                Alignment.CenterVertically
+        ) {
+            Text(
+                documentFileEmoji(document.name),
+                style =
+                    MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.width(8.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    document.name,
+                    style =
+                        MaterialTheme.typography.bodySmall,
+                    color = Navy,
+                    maxLines = 1,
+                    overflow =
+                        TextOverflow.Ellipsis
+                )
+                Text(
+                    buildString {
+                        if (
+                            document.documentRole
+                                .isNotBlank()
+                        ) {
+                            append(
+                                document.documentRole
+                            )
+                        } else {
+                            append(document.type)
+                        }
+                        if (
+                            document.offlineAvailable
+                        ) {
+                            append(" · זמין אופליין")
+                        }
+                    },
+                    style =
+                        MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
+            }
+
+            TextButton(onClick = onOpen) {
+                Text("פתיחה")
+            }
+
+            IconButton(onClick = onDelete) {
+                SmallDeleteIcon(
+                    Modifier.size(27.dp)
+                )
+            }
+        }
+    }
+}
+
+private fun openTripDocument(
+    context: android.content.Context,
+    document: TripDocument
+) {
+    runCatching {
+        context.startActivity(
+            Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(document.uri)
+            ).addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        )
+    }
+}
+
+private fun documentCategoryEmoji(
+    category: String
+): String = when (category) {
+    "טיסות" -> "✈️"
+    "מלונות" -> "🏨"
+    "אטרקציות" -> "🎟️"
+    "הסעות" -> "🚐"
+    "תחבורה" -> "🚆"
+    "ביטוח" -> "🛡️"
+    "מסמכים אישיים" -> "🛂"
+    "כללי" -> "📎"
+    "הכול" -> "📚"
+    else -> "📄"
+}
+
+private fun documentFileEmoji(
+    name: String
+): String {
+    val lower = name.lowercase()
+    return when {
+        lower.endsWith(".pdf") -> "📕"
+        lower.endsWith(".jpg") ||
+            lower.endsWith(".jpeg") ||
+            lower.endsWith(".png") ||
+            lower.endsWith(".webp") -> "🖼️"
+        else -> "📄"
     }
 }
 

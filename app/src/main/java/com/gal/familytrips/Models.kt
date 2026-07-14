@@ -115,7 +115,12 @@ data class TripDocument(
     val uri: String,
     val type: String = "כללי",
     val notes: String = "",
-    val passengerName: String = ""
+    val passengerName: String = "",
+    val requirementKey: String = "",
+    val bookingId: String = "",
+    val documentRole: String = "",
+    val offlineAvailable: Boolean = true,
+    val addedAt: Long = 0L
 )
 
 @Serializable

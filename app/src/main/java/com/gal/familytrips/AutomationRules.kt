@@ -13,7 +13,10 @@ data class DocumentRequirement(
     val key: String,
     val title: String,
     val type: String,
-    val description: String
+    val description: String,
+    val bookingId: String = "",
+    val requiredCount: Int = 1,
+    val supportsPassengers: Boolean = false
 )
 
 fun suggestedBudgetTemplates(trip: Trip): List<BudgetTemplate> {
@@ -61,13 +64,16 @@ fun suggestedBudgetTemplates(trip: Trip): List<BudgetTemplate> {
     return result.distinctBy { it.id }
 }
 
-fun suggestedDocumentRequirements(trip: Trip): List<DocumentRequirement> {
+fun suggestedDocumentRequirements(
+    trip: Trip
+): List<DocumentRequirement> {
     val result = mutableListOf(
         DocumentRequirement(
             key = "base-passports",
             title = "צילומי דרכונים",
             type = "מסמכים אישיים",
-            description = "עותק מאובטח לכל נוסע"
+            description = "עותק מאובטח לכל נוסע",
+            supportsPassengers = true
         ),
         DocumentRequirement(
             key = "base-insurance",
@@ -77,12 +83,38 @@ fun suggestedDocumentRequirements(trip: Trip): List<DocumentRequirement> {
         )
     )
 
+    trip.flights.forEach { flight ->
+        val title = buildString {
+            append("טיסה")
+            if (flight.flightNumber.isNotBlank()) {
+                append(" ")
+                append(flight.flightNumber)
+            }
+            append(" · ")
+            append(flight.departureAirport)
+            append("–")
+            append(flight.arrivalAirport)
+        }
+
+        result += DocumentRequirement(
+            key = "flight-${flight.id}",
+            title = title,
+            type = "טיסות",
+            description =
+                "כרטיסים, אישור הזמנה ו-Boarding Pass",
+            bookingId = flight.id,
+            supportsPassengers = true
+        )
+    }
+
     trip.hotels.forEach { hotel ->
         result += DocumentRequirement(
             key = "hotel-${hotel.id}",
             title = hotel.name,
             type = "מלונות",
-            description = "אישור הזמנה / Voucher"
+            description =
+                "Voucher, אישור הזמנה ואישור תשלום",
+            bookingId = hotel.id
         )
     }
 
@@ -94,11 +126,18 @@ fun suggestedDocumentRequirements(trip: Trip): List<DocumentRequirement> {
                     title = activity.name,
                     type = type,
                     description = when (type) {
-                        "טיסות" -> "כרטיס טיסה / Boarding Pass"
-                        "הסעות" -> "אישור הזמנה ופרטי איסוף"
-                        "תחבורה" -> "כרטיס / אישור נסיעה"
-                        else -> "כרטיס, Voucher או QR code"
-                    }
+                        "טיסות" ->
+                            "כרטיס טיסה / Boarding Pass"
+                        "הסעות" ->
+                            "אישור הזמנה ופרטי איסוף"
+                        "תחבורה" ->
+                            "כרטיס / אישור נסיעה"
+                        else ->
+                            "כרטיס, Voucher או QR code"
+                    },
+                    bookingId = activity.id,
+                    supportsPassengers =
+                        type == "טיסות"
                 )
             }
         }
