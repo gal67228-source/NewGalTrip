@@ -1052,86 +1052,611 @@ private fun TripsScreen(
     onImportTrip: (String) -> Unit,
     modifier: Modifier
 ) {
-    var importText by remember { mutableStateOf<String?>(null) }
-    var editingTrip by remember { mutableStateOf<Trip?>(null) }
+    var importText by remember {
+        mutableStateOf<String?>(null)
+    }
+    var editingTrip by remember {
+        mutableStateOf<Trip?>(null)
+    }
+
+    val currentTrip = state.trips.firstOrNull {
+        it.id == state.currentTripId
+    } ?: state.trips.first()
+
+    val today = LocalDate.now()
+    val startDate = runCatching {
+        LocalDate.parse(currentTrip.startDate)
+    }.getOrNull()
+    val endDate = runCatching {
+        LocalDate.parse(currentTrip.endDate)
+    }.getOrNull()
+
+    val tripStateText = when {
+        startDate == null || endDate == null ->
+            "תאריכי הטיול אינם מלאים"
+
+        today.isBefore(startDate) -> {
+            val days = java.time.temporal.ChronoUnit.DAYS
+                .between(today, startDate)
+            "עוד $days ימים לטיול"
+        }
+
+        today.isAfter(endDate) ->
+            "הטיול הסתיים ✓"
+
+        else -> {
+            val dayNumber = java.time.temporal.ChronoUnit.DAYS
+                .between(startDate, today) + 1
+            val totalDays = java.time.temporal.ChronoUnit.DAYS
+                .between(startDate, endDate) + 1
+            "יום $dayNumber מתוך $totalDays"
+        }
+    }
+
+    val tripProgress = when {
+        startDate == null || endDate == null -> 0f
+        today.isBefore(startDate) -> 0f
+        today.isAfter(endDate) -> 1f
+        else -> {
+            val total = java.time.temporal.ChronoUnit.DAYS
+                .between(startDate, endDate)
+                .coerceAtLeast(1)
+            val passed = java.time.temporal.ChronoUnit.DAYS
+                .between(startDate, today)
+            (passed.toFloat() / total.toFloat())
+                .coerceIn(0f, 1f)
+        }
+    }
+
+    val activeDay = currentTrip.days
+        .sortedBy { it.date }
+        .firstOrNull { it.date == today.toString() }
+        ?: currentTrip.days
+            .sortedBy { it.date }
+            .firstOrNull {
+                runCatching {
+                    LocalDate.parse(it.date).isAfter(today)
+                }.getOrDefault(false)
+            }
+        ?: currentTrip.days.sortedBy { it.date }.lastOrNull()
+
+    val weather by produceState<DayWeather?>(
+        initialValue = null,
+        currentTrip.id,
+        activeDay?.id,
+        currentTrip.offlineMode
+    ) {
+        value = if (
+            currentTrip.offlineMode ||
+            activeDay == null
+        ) {
+            null
+        } else {
+            runCatching {
+                WeatherService.load(
+                    currentTrip,
+                    activeDay
+                )
+            }.getOrNull()
+        }
+    }
+
+    val nextFlight = currentTrip.flights
+        .sortedWith(
+            compareBy<Flight> {
+                it.departureDate
+            }.thenBy {
+                it.departureTime
+            }
+        )
+        .firstOrNull {
+            it.departureDate >= today.toString()
+        }
+
+    val activeHotel = currentTrip.hotels.firstOrNull {
+        runCatching {
+            val checkIn = LocalDate.parse(it.checkIn)
+            val checkOut = LocalDate.parse(it.checkOut)
+            !today.isBefore(checkIn) &&
+                !today.isAfter(checkOut)
+        }.getOrDefault(false)
+    } ?: currentTrip.hotels
+        .sortedBy { it.checkIn }
+        .firstOrNull {
+            it.checkIn >= today.toString()
+        }
+
+    val expenseTotal = currentTrip.expenses.sumOf {
+        it.amount
+    }
+
+    val packedCount = currentTrip.packingItems.count {
+        it.packed
+    }
+    val packingTotal = currentTrip.packingItems.size
+
+    val totalActivities = currentTrip.days.sumOf {
+        it.activities.size
+    }
+    val activitiesWithoutLocation = currentTrip.days
+        .flatMap { it.activities }
+        .count {
+            it.location.isBlank() &&
+                !it.name.contains("ארוחת") &&
+                !it.name.contains("מנוחה")
+        }
+
+    val missingDocuments =
+        calculateMissingDocumentCount(currentTrip)
+    val uncoveredHotelNights =
+        calculateUncoveredHotelNights(currentTrip)
+    val emptyDays = currentTrip.days.count {
+        it.activities.isEmpty()
+    }
+
+    val healthIssues = buildList {
+        if (missingDocuments > 0) {
+            add("חסרים $missingDocuments מסמכים או שוברים")
+        }
+        if (uncoveredHotelNights > 0) {
+            add("$uncoveredHotelNights לילות ללא מלון")
+        }
+        if (activitiesWithoutLocation > 0) {
+            add("$activitiesWithoutLocation פעילויות ללא מיקום")
+        }
+        if (emptyDays > 0) {
+            add("$emptyDays ימים ללא פעילויות")
+        }
+        if (currentTrip.flights.isEmpty()) {
+            add("לא הוזנו טיסות")
+        }
+    }
+
+    val healthScore = (
+        100 - healthIssues.size * 12
+    ).coerceIn(0, 100)
+
+    val nextAction = calculateHomeNextAction(
+        trip = currentTrip,
+        activeDay = activeDay,
+        today = today,
+        missingDocuments = missingDocuments,
+        uncoveredHotelNights = uncoveredHotelNights
+    )
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(
+                horizontal = 14.dp,
+                vertical = 10.dp
+            ),
+        verticalArrangement =
+            Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(
+            bottom = 28.dp
+        )
     ) {
         item {
             GradientHeader(
-                title = "הטיולים שלי",
-                subtitle = "כל החופשות במקום אחד",
+                title = currentTrip.name,
+                subtitle = currentTrip.destination,
                 emoji = "🌍",
                 start = Lavender,
                 end = Navy
             )
         }
 
-        items(state.trips, key = { it.id }) { trip ->
-            SectionCard(containerColor = SoftLavender) {
+        item {
+            SectionCard(
+                containerColor = SoftLavender
+            ) {
                 Text(
-                    text = trip.name,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    tripStateText,
+                    style =
+                        MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
                 )
                 Text(
-                    text = trip.destination,
+                    "${currentTrip.startDate}–${currentTrip.endDate}",
                     color = TextSecondary
                 )
-                Text(
-                    text = "${trip.startDate}–${trip.endDate}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+
+                LinearProgressIndicator(
+                    progress = { tripProgress },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Lavender,
+                    trackColor = Color(0xFFE8E0F5)
                 )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement =
+                        Arrangement.SpaceBetween
                 ) {
-                    AccentButton(
-                        text = if (state.currentTripId == trip.id) "נבחר" else "בחירה",
-                        emoji = if (state.currentTripId == trip.id) "✓" else "✈️",
-                        onClick = { onStateChange(state.copy(currentTripId = trip.id)) },
-                        color = if (state.currentTripId == trip.id) Mint else Sky,
-                        modifier = Modifier.weight(1f)
+                    Text(
+                        "${currentTrip.days.size} ימים",
+                        style =
+                            MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
                     )
-
-                    SoftActionButton(
-                        text = "עריכה",
-                        emoji = "✏️",
-                        onClick = { editingTrip = trip },
-                        container = SoftSun,
-                        contentColor = Color(0xFF8F6500),
-                        modifier = Modifier.weight(1f)
+                    Text(
+                        "${(tripProgress * 100).toInt()}%",
+                        fontWeight = FontWeight.Bold,
+                        color = Lavender
                     )
+                }
+            }
+        }
 
-                    SoftActionButton(
-                        text = "שיתוף",
-                        emoji = "📤",
-                        onClick = { onShareTrip(trip) },
-                        container = SoftBlue,
-                        contentColor = Sky,
+        item {
+            Text(
+                "מצב הטיול",
+                style =
+                    MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.spacedBy(9.dp)
+            ) {
+                HomeStatusCard(
+                    emoji = "✈️",
+                    title = "טיסה הבאה",
+                    value = nextFlight?.let {
+                        "${it.departureDate} ${it.departureTime}"
+                    } ?: "לא הוזנה",
+                    modifier = Modifier.weight(1f)
+                )
+                HomeStatusCard(
+                    emoji = "🏨",
+                    title = "מלון",
+                    value = activeHotel?.name
+                        ?: "לא הוזן",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.spacedBy(9.dp)
+            ) {
+                HomeStatusCard(
+                    emoji = "💰",
+                    title = "הוצאות",
+                    value = formatHomeMoney(
+                        expenseTotal,
+                        currentTrip.expenses
+                            .firstOrNull()
+                            ?.currency
+                            ?: "₪"
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+                HomeStatusCard(
+                    emoji = "📄",
+                    title = "מסמכים",
+                    value = if (missingDocuments == 0) {
+                        "${currentTrip.documents.size} מוכנים"
+                    } else {
+                        "$missingDocuments חסרים"
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            SectionCard(containerColor = SoftBlue) {
+                Text(
+                    "הפעולה הבאה",
+                    style =
+                        MaterialTheme.typography.labelSmall,
+                    color = Sky
+                )
+                Text(
+                    nextAction.first,
+                    style =
+                        MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+                Text(
+                    nextAction.second,
+                    color = TextSecondary
+                )
+            }
+        }
+
+        weather?.let { currentWeather ->
+            item {
+                SectionCard(
+                    containerColor = SoftAqua
+                ) {
+                    Row(
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+                        Text(
+                            currentWeather.emoji,
+                            style = MaterialTheme.typography
+                                .headlineMedium
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                "מזג האוויר ב־${currentWeather.locationName}",
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                            Text(
+                                "${currentWeather.min}°–${currentWeather.max}° · ${currentWeather.description}",
+                                color = TextSecondary
+                            )
+                        }
+                        currentWeather.rainChance?.let {
+                            Text(
+                                "$it% גשם",
+                                color = Aqua,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            SectionCard(
+                containerColor = when {
+                    healthScore >= 85 -> SoftMint
+                    healthScore >= 60 -> SoftSun
+                    else -> Color(0xFFFFE5E1)
+                }
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+                    Column(
                         modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "מצב מוכנות הטיול",
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+                        Text(
+                            when {
+                                healthScore >= 85 ->
+                                    "הטיול מוכן ליציאה"
+                                healthScore >= 60 ->
+                                    "נשארו כמה דברים לטיפול"
+                                else ->
+                                    "נדרש טיפול לפני הטיול"
+                            },
+                            color = TextSecondary,
+                            style =
+                                MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Text(
+                        "$healthScore%",
+                        style =
+                            MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = when {
+                            healthScore >= 85 ->
+                                Color(0xFF2E7D56)
+                            healthScore >= 60 ->
+                                Color(0xFF8F6500)
+                            else -> Coral
+                        }
                     )
                 }
 
-                if (state.trips.size > 1) {
-                    TextButton(
-                        onClick = {
-                            val remaining = state.trips.filterNot { it.id == trip.id }
-                            onStateChange(
-                                state.copy(
-                                    trips = remaining,
-                                    currentTripId = remaining.first().id
-                                )
+                if (healthIssues.isEmpty()) {
+                    Text(
+                        "✓ לא נמצאו בעיות פתוחות",
+                        color = Color(0xFF2E7D56),
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    healthIssues.take(4).forEach {
+                        Text(
+                            "⚠ $it",
+                            color = TextSecondary,
+                            style =
+                                MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                "הטיול במספרים",
+                style =
+                    MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+                HomeStatisticCard(
+                    emoji = "📍",
+                    value = currentTrip.destinationStops
+                        .distinct()
+                        .size
+                        .coerceAtLeast(1)
+                        .toString(),
+                    label = "יעדים",
+                    modifier = Modifier.weight(1f)
+                )
+                HomeStatisticCard(
+                    emoji = "✈️",
+                    value = currentTrip.flights.size
+                        .toString(),
+                    label = "טיסות",
+                    modifier = Modifier.weight(1f)
+                )
+                HomeStatisticCard(
+                    emoji = "🏨",
+                    value = currentTrip.hotels.size
+                        .toString(),
+                    label = "מלונות",
+                    modifier = Modifier.weight(1f)
+                )
+                HomeStatisticCard(
+                    emoji = "🎟️",
+                    value = totalActivities.toString(),
+                    label = "פעילויות",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        if (packingTotal > 0) {
+            item {
+                SectionCard(containerColor = CardWhite) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "🧳 אריזה",
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+                        Text(
+                            "$packedCount מתוך $packingTotal",
+                            color = TextSecondary
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = {
+                            packedCount.toFloat() /
+                                packingTotal.toFloat()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Aqua,
+                        trackColor = SoftAqua
+                    )
+                }
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+                SoftActionButton(
+                    text = "עריכת טיול",
+                    emoji = "✏️",
+                    onClick = {
+                        editingTrip = currentTrip
+                    },
+                    container = SoftSun,
+                    contentColor = Color(0xFF8F6500),
+                    modifier = Modifier.weight(1f)
+                )
+                SoftActionButton(
+                    text = "שיתוף",
+                    emoji = "📤",
+                    onClick = {
+                        onShareTrip(currentTrip)
+                    },
+                    container = SoftBlue,
+                    contentColor = Sky,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        if (state.trips.size > 1) {
+            item {
+                Text(
+                    "טיולים נוספים",
+                    style =
+                        MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+            }
+
+            items(
+                state.trips.filterNot {
+                    it.id == currentTrip.id
+                },
+                key = { it.id }
+            ) { trip ->
+                Surface(
+                    onClick = {
+                        onStateChange(
+                            state.copy(
+                                currentTripId = trip.id
+                            )
+                        )
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    color = CardWhite,
+                    border = BorderStroke(
+                        1.dp,
+                        Color(0xFFE3E9F0)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "🌍",
+                            style = MaterialTheme.typography
+                                .titleLarge
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                trip.name,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                            Text(
+                                trip.destination,
+                                color = TextSecondary,
+                                style =
+                                    MaterialTheme.typography.bodySmall
                             )
                         }
-                    ) {
-                        Text("🗑️ מחיקת הטיול", color = Coral)
+                        Text("›", color = Sky)
                     }
                 }
             }
@@ -1141,15 +1666,13 @@ private fun TripsScreen(
             SoftActionButton(
                 text = "ייבוא טיול מטקסט JSON",
                 emoji = "📥",
-                onClick = { importText = "" },
+                onClick = {
+                    importText = ""
+                },
                 container = SoftAqua,
                 contentColor = Aqua,
                 modifier = Modifier.fillMaxWidth()
             )
-        }
-
-        item {
-            Spacer(Modifier.height(20.dp))
         }
     }
 
@@ -1157,7 +1680,9 @@ private fun TripsScreen(
         TextAreaDialog(
             title = "ייבוא טיול",
             initial = importText!!,
-            onDismiss = { importText = null },
+            onDismiss = {
+                importText = null
+            },
             onConfirm = {
                 onImportTrip(it)
                 importText = null
@@ -1168,36 +1693,272 @@ private fun TripsScreen(
     editingTrip?.let { tripToEdit ->
         NewTripDialog(
             existingTrip = tripToEdit,
-            onDismiss = { editingTrip = null },
+            onDismiss = {
+                editingTrip = null
+            },
             onConfirm = { name, stays ->
-                val normalizedStays = stays.sortedBy { it.startDate }
-                val generatedDays = buildDaysFromDestinationStays(
-                    stays = normalizedStays,
-                    existingDays = tripToEdit.days
-                )
-                val validDayIds = generatedDays.map { it.id }.toSet()
+                val normalizedStays =
+                    stays.sortedBy { it.startDate }
+                val generatedDays =
+                    buildDaysFromDestinationStays(
+                        stays = normalizedStays,
+                        existingDays = tripToEdit.days
+                    )
+                val validDayIds =
+                    generatedDays.map { it.id }.toSet()
                 val destinations = normalizedStays
                     .map { it.destination }
                     .distinct()
 
                 val updatedTrip = tripToEdit.copy(
                     name = name,
-                    destination = destinations.joinToString(" • "),
+                    destination =
+                        destinations.joinToString(" • "),
                     destinationStops = destinations,
                     destinationStays = normalizedStays,
-                    startDate = normalizedStays.first().startDate,
-                    endDate = normalizedStays.last().endDate,
+                    startDate =
+                        normalizedStays.first().startDate,
+                    endDate =
+                        normalizedStays.last().endDate,
                     days = generatedDays,
-                    restaurants = tripToEdit.restaurants.filter {
-                        it.dayId == null || it.dayId in validDayIds
-                    }
+                    restaurants =
+                        tripToEdit.restaurants.filter {
+                            it.dayId == null ||
+                                it.dayId in validDayIds
+                        }
                 )
 
-                onStateChange(state.replaceTrip(updatedTrip))
+                onStateChange(
+                    state.replaceTrip(updatedTrip)
+                )
                 editingTrip = null
             }
         )
     }
+}
+
+@Composable
+private fun HomeStatusCard(
+    emoji: String,
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.height(112.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = CardWhite,
+        border = BorderStroke(
+            1.dp,
+            Color(0xFFE3E9F0)
+        ),
+        tonalElevation = 1.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement =
+                Arrangement.SpaceBetween
+        ) {
+            Text(
+                emoji,
+                style =
+                    MaterialTheme.typography.titleLarge
+            )
+            Text(
+                title,
+                style =
+                    MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
+            Text(
+                value,
+                fontWeight = FontWeight.Bold,
+                color = Navy,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeStatisticCard(
+    emoji: String,
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = CardWhite,
+        border = BorderStroke(
+            1.dp,
+            Color(0xFFE3E9F0)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(
+                horizontal = 6.dp,
+                vertical = 10.dp
+            ),
+            horizontalAlignment =
+                Alignment.CenterHorizontally
+        ) {
+            Text(emoji)
+            Text(
+                value,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+            Text(
+                label,
+                style =
+                    MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
+        }
+    }
+}
+
+private fun calculateMissingDocumentCount(
+    trip: Trip
+): Int {
+    var missing = 0
+
+    trip.flights.forEach { flight ->
+        val matched = trip.documents.any {
+            it.type.contains("טיסה") ||
+                it.name.contains(
+                    flight.flightNumber,
+                    ignoreCase = true
+                )
+        }
+        if (!matched) {
+            missing += 1
+        }
+    }
+
+    trip.hotels.forEach { hotel ->
+        val matched = trip.documents.any {
+            it.type.contains("מלון") ||
+                it.name.contains(
+                    hotel.name,
+                    ignoreCase = true
+                )
+        }
+        if (!matched) {
+            missing += 1
+        }
+    }
+
+    return missing
+}
+
+private fun calculateUncoveredHotelNights(
+    trip: Trip
+): Int {
+    val start = runCatching {
+        LocalDate.parse(trip.startDate)
+    }.getOrNull() ?: return 0
+    val end = runCatching {
+        LocalDate.parse(trip.endDate)
+    }.getOrNull() ?: return 0
+
+    var date = start
+    var missing = 0
+
+    while (date.isBefore(end)) {
+        val covered = trip.hotels.any { hotel ->
+            runCatching {
+                val checkIn =
+                    LocalDate.parse(hotel.checkIn)
+                val checkOut =
+                    LocalDate.parse(hotel.checkOut)
+                !date.isBefore(checkIn) &&
+                    date.isBefore(checkOut)
+            }.getOrDefault(false)
+        }
+
+        if (!covered) {
+            missing += 1
+        }
+        date = date.plusDays(1)
+    }
+
+    return missing
+}
+
+private fun calculateHomeNextAction(
+    trip: Trip,
+    activeDay: TripDay?,
+    today: LocalDate,
+    missingDocuments: Int,
+    uncoveredHotelNights: Int
+): Pair<String, String> {
+    val liveActivity = activeDay?.activities
+        ?.firstOrNull {
+            it.liveStatus in setOf(
+                "traveling",
+                "arrived",
+                "active"
+            )
+        }
+
+    if (liveActivity != null) {
+        return when (liveActivity.liveStatus) {
+            "traveling" ->
+                "📍 אשר הגעה" to liveActivity.name
+            "arrived" ->
+                "✅ סיים פעילות" to liveActivity.name
+            else ->
+                "✅ סיים פעילות" to liveActivity.name
+        }
+    }
+
+    val nextActivity = activeDay?.activities
+        ?.firstOrNull {
+            !it.completed && !it.skipped
+        }
+
+    if (
+        activeDay?.date == today.toString() &&
+        nextActivity != null
+    ) {
+        return "🚶 צא לדרך" to
+            "${nextActivity.time} · ${nextActivity.name}"
+    }
+
+    if (missingDocuments > 0) {
+        return "📄 השלמת מסמכים" to
+            "$missingDocuments מסמכים או שוברים חסרים"
+    }
+
+    if (uncoveredHotelNights > 0) {
+        return "🏨 השלמת מלונות" to
+            "$uncoveredHotelNights לילות ללא מלון"
+    }
+
+    val nextFlight = trip.flights
+        .sortedBy { it.departureDate }
+        .firstOrNull {
+            it.departureDate >= today.toString()
+        }
+
+    if (nextFlight != null) {
+        return "✈️ הטיסה הבאה" to
+            "${nextFlight.departureDate} · ${nextFlight.departureTime}"
+    }
+
+    return "✓ אין פעולות דחופות" to
+        "הטיול נראה מוכן"
+}
+
+private fun formatHomeMoney(
+    amount: Double,
+    currency: String
+): String {
+    return "$currency${"%,.0f".format(amount)}"
 }
 
 @Composable

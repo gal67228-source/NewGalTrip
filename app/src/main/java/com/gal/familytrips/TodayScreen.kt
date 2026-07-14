@@ -82,7 +82,7 @@ fun TodayScreen(
         isActualToday
     ) {
         activities.firstOrNull {
-            it.liveStatus in setOf("active", "arrived") &&
+            it.liveStatus == "active" &&
                 !it.completed &&
                 !it.skipped
         } ?: if (!isActualToday) {
@@ -247,74 +247,129 @@ fun TodayScreen(
                 dayHasArrived = dayHasArrived,
                 isFutureDay = isFutureDay,
                 onOpenUrl = onOpenUrl,
-                onDepart = { activity, openWith ->
-                    val nowText = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+                onStart = { activity ->
+                    val nowText = LocalTime.now()
+                        .format(DateTimeFormatter.ofPattern("HH:mm"))
+
                     val updatedDay = selectedDay.copy(
                         activities = selectedDay.activities.map {
                             when {
                                 it.id == activity.id -> it.copy(
-                                    liveStatus = "traveling",
-                                    departureTimeActual = nowText,
+                                    liveStatus = "active",
+                                    actualStartTime = nowText,
                                     completed = false,
                                     skipped = false
                                 )
-                                it.liveStatus in setOf("active", "arrived", "traveling") -> it.copy(liveStatus = "waiting")
+                                it.liveStatus == "active" -> it.copy(
+                                    liveStatus = "waiting"
+                                )
                                 else -> it
                             }
                         }
                     )
-                    onTripChange(trip.copy(days = trip.days.map { if (it.id == selectedDay.id) updatedDay else it }))
-                    val destination = activity.location.ifBlank { activity.name }
-                    val origin = currentOrPrevious?.location?.ifBlank { currentOrPrevious.name }.orEmpty()
-                    val url = if (openWith == "waze") {
-                        "https://waze.com/ul?q=" + Uri.encode(destination) + "&navigate=yes"
-                    } else {
-                        "https://www.google.com/maps/dir/?api=1" +
-                            (if (origin.isNotBlank()) "&origin=${Uri.encode(origin)}" else "") +
-                            "&destination=${Uri.encode(destination)}"
-                    }
-                    onOpenUrl(url)
-                },
-                onArrive = { activity ->
-                    val nowText = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
-                    val updatedDay = selectedDay.copy(
-                        activities = selectedDay.activities.map {
-                            if (it.id == activity.id) it.copy(
-                                liveStatus = "arrived",
-                                arrivalTimeActual = nowText,
-                                actualStartTime = nowText
-                            ) else it
-                        }
+
+                    onTripChange(
+                        trip.copy(
+                            days = trip.days.map {
+                                if (it.id == selectedDay.id) {
+                                    updatedDay
+                                } else {
+                                    it
+                                }
+                            }
+                        )
                     )
-                    onTripChange(trip.copy(days = trip.days.map { if (it.id == selectedDay.id) updatedDay else it }))
                 },
                 onFinish = { activity ->
-                    val nowText = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+                    val nowText = LocalTime.now()
+                        .format(DateTimeFormatter.ofPattern("HH:mm"))
+
                     val updatedDay = selectedDay.copy(
                         activities = selectedDay.activities.map {
-                            if (it.id == activity.id) it.copy(
-                                liveStatus = "completed",
-                                actualEndTime = nowText,
-                                completed = true,
-                                skipped = false
-                            ) else it
+                            if (it.id == activity.id) {
+                                it.copy(
+                                    liveStatus = "completed",
+                                    actualEndTime = nowText,
+                                    completed = true,
+                                    skipped = false
+                                )
+                            } else {
+                                it
+                            }
                         }
                     )
-                    onTripChange(trip.copy(days = trip.days.map { if (it.id == selectedDay.id) updatedDay else it }))
+
+                    onTripChange(
+                        trip.copy(
+                            days = trip.days.map {
+                                if (it.id == selectedDay.id) {
+                                    updatedDay
+                                } else {
+                                    it
+                                }
+                            }
+                        )
+                    )
                 },
                 onSkip = { activity ->
-                    val updatedActivities = selectedDay.activities.map {
-                        if (it.id == activity.id) it.copy(
-                            liveStatus = "skipped",
-                            skipped = true,
-                            completed = false,
-                            actualEndTime = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
-                        ) else it
+                    val index = selectedDay.activities.indexOfFirst {
+                        it.id == activity.id
                     }
-                    val updatedDay = selectedDay.copy(activities = normalizeLiveTimeline(updatedActivities))
-                    onTripChange(trip.copy(days = trip.days.map { if (it.id == selectedDay.id) updatedDay else it }))
+                    val updatedActivities = selectedDay.activities
+                        .map {
+                            if (it.id == activity.id) {
+                                it.copy(
+                                    liveStatus = "skipped",
+                                    skipped = true,
+                                    completed = false,
+                                    actualEndTime = LocalTime.now()
+                                        .format(
+                                            DateTimeFormatter.ofPattern(
+                                                "HH:mm"
+                                            )
+                                        )
+                                )
+                            } else {
+                                it
+                            }
+                        }
+                        .toMutableList()
+
+                    if (index >= 0) {
+                        updatedActivities.removeAt(index)
+                        updatedActivities.add(
+                            index,
+                            activity.copy(
+                                liveStatus = "skipped",
+                                skipped = true,
+                                completed = false
+                            )
+                        )
+                    }
+
+                    val normalized = normalizeLiveTimeline(
+                        updatedActivities
+                    )
+
+                    val updatedDay = selectedDay.copy(
+                        activities = normalized
+                    )
+
+                    onTripChange(
+                        trip.copy(
+                            days = trip.days.map {
+                                if (it.id == selectedDay.id) {
+                                    updatedDay
+                                } else {
+                                    it
+                                }
+                            }
+                        )
+                    )
                 },
-                onDelay = { showDelayDialog = true }
+                onDelay = {
+                    showDelayDialog = true
+                }
             )
         }
 
@@ -617,73 +672,237 @@ private fun TodayCommandCard(
     dayHasArrived: Boolean,
     isFutureDay: Boolean,
     onOpenUrl: (String) -> Unit,
-    onDepart: (ActivityItem, String) -> Unit,
-    onArrive: (ActivityItem) -> Unit,
+    onStart: (ActivityItem) -> Unit,
     onFinish: (ActivityItem) -> Unit,
     onSkip: (ActivityItem) -> Unit,
     onDelay: () -> Unit
 ) {
-    val travelingActivity = listOfNotNull(currentActivity, nextActivity).firstOrNull { it.liveStatus == "traveling" }
-    val arrivedActivity = listOfNotNull(currentActivity, nextActivity).firstOrNull { it.liveStatus == "arrived" }
-    val actionActivity = travelingActivity ?: arrivedActivity ?: currentActivity ?: nextActivity
-
-    SectionCard(containerColor = when {
-        travelingActivity != null -> SoftAqua
-        arrivedActivity != null -> SoftMint
-        currentActivity != null -> SoftBlue
-        nextActivity != null -> SoftAqua
-        else -> SoftMint
-    }) {
-        if (actionActivity == null) {
-            Text("כל הפעילויות הושלמו 🎉", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D56))
+    SectionCard(
+        containerColor = when {
+            currentActivity != null -> SoftBlue
+            nextActivity != null -> SoftAqua
+            else -> SoftMint
+        }
+    ) {
+        if (currentActivity == null && nextActivity == null) {
+            Text(
+                "כל הפעילויות הושלמו 🎉",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF2E7D56)
+            )
             return@SectionCard
         }
-        Text("הפעולה הבאה שלך", style = MaterialTheme.typography.labelSmall, color = Sky)
-        when (actionActivity.liveStatus) {
-            "traveling" -> {
-                Text("🚶 בדרך אל ${actionActivity.name}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy)
-                val departure = actionActivity.departureTimeActual
-                val eta = activityClockMinutesToday(departure)?.plus(actionActivity.transitionMinutes.coerceAtLeast(0))
-                if (departure.isNotBlank()) Text("יצאת: $departure", color = TextSecondary)
-                eta?.let { Text("הגעה משוערת: ${minutesToClockToday(it)}", color = TextSecondary) }
-                if (actionActivity.transitionMinutes > 0) Text("משך מתוכנן: ${actionActivity.transitionMinutes} דקות", color = TextSecondary)
-                Button(onClick = { onArrive(actionActivity) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text("📍 הגעתי") }
+
+        currentActivity?.let { current ->
+            Text(
+                "עכשיו",
+                style = MaterialTheme.typography.labelSmall,
+                color = Sky
+            )
+            Text(
+                "${activityTimeRangeToday(current)} · ${current.name}",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+            if (current.location.isNotBlank()) {
+                Text(
+                    current.location,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
-            "arrived" -> {
-                Text("📍 הגעת אל ${actionActivity.name}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy)
-                if (actionActivity.arrivalTimeActual.isNotBlank()) Text("שעת הגעה: ${actionActivity.arrivalTimeActual}", color = TextSecondary)
-                actualTransitionMinutesToday(actionActivity)?.let {
-                    Text("מעבר בפועל: $it דקות" + if (actionActivity.transitionMinutes > 0) " · מתוכנן: ${actionActivity.transitionMinutes} דקות" else "", color = TextSecondary)
+        }
+
+        if (currentActivity == null && nextActivity != null) {
+            Text(
+                "הפעילות הקרובה",
+                style = MaterialTheme.typography.labelSmall,
+                color = Sky
+            )
+            Text(
+                "${activityTimeRangeToday(nextActivity)} · ${nextActivity.name}",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+        }
+
+        nextActivity?.let { next ->
+            HorizontalDivider(
+                color = Color(0xFFD6E6F8)
+            )
+
+            Text(
+                "הבא",
+                style = MaterialTheme.typography.labelSmall,
+                color = Aqua
+            )
+            Text(
+                "${next.time} · ${next.name}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+
+            if (next.transitionMinutes > 0) {
+                Text(
+                    "${transitionEmoji(next.transitionMode)} ${next.transitionMinutes} דקות מעבר",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            departureMinutes?.let {
+                Text(
+                    "שעת יציאה מומלצת: ${minutesToClockToday(it)}",
+                    color = Navy,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            departureStatus?.let { status ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = when {
+                        status.startsWith("צא עכשיו") ->
+                            Color(0xFFD9F3E4)
+                        status.startsWith("איחור") ->
+                            Color(0xFFFFE5E1)
+                        else ->
+                            SoftSun
+                    }
+                ) {
+                    Text(
+                        status,
+                        modifier = Modifier.padding(
+                            horizontal = 10.dp,
+                            vertical = 7.dp
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = when {
+                            status.startsWith("צא עכשיו") ->
+                                Color(0xFF2E7D56)
+                            status.startsWith("איחור") ->
+                                Coral
+                            else ->
+                                Color(0xFF8F6500)
+                        }
+                    )
                 }
-                Button(onClick = { onFinish(actionActivity) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text("✅ סיימתי") }
             }
-            else -> {
-                val isCurrent = currentActivity?.id == actionActivity.id
-                Text(if (isCurrent) "${activityTimeRangeToday(actionActivity)} · ${actionActivity.name}" else "${actionActivity.time} · ${actionActivity.name}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Navy)
-                if (actionActivity.location.isNotBlank()) Text(actionActivity.location, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                if (isCurrent) {
-                    Button(onClick = { onFinish(actionActivity) }, enabled = dayHasArrived, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text("✅ סיימתי") }
-                } else {
-                    if (actionActivity.transitionMinutes > 0) Text("${transitionEmoji(actionActivity.transitionMode)} ${actionActivity.transitionMinutes} דקות מעבר", color = TextSecondary)
-                    departureMinutes?.let { Text("שעת יציאה מומלצת: ${minutesToClockToday(it)}", fontWeight = FontWeight.Bold, color = Navy) }
-                    departureStatus?.let { Text(it, fontWeight = FontWeight.Bold, color = if (it.startsWith("איחור")) Coral else if (it.startsWith("צא עכשיו")) Color(0xFF2E7D56) else Color(0xFF8F6500)) }
-                    if (!dayHasArrived) {
-                        Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(if (isFutureDay) "הפעולה תיפתח ביום הפעילות" else "לא ניתן להתחיל מעבר") }
+
+            val origin = previousActivity
+                ?.location
+                ?.ifBlank { previousActivity.name }
+                .orEmpty()
+            val destination = next.location
+                .ifBlank { next.name }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = {
+                        onOpenUrl(
+                            "https://www.google.com/maps/dir/?api=1" +
+                                (
+                                    if (origin.isNotBlank()) {
+                                        "&origin=${Uri.encode(origin)}"
+                                    } else {
+                                        ""
+                                    }
+                                    ) +
+                                "&destination=${Uri.encode(destination)}"
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    GoogleMapsBrandIcon(Modifier.size(24.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Maps")
+                }
+
+                FilledTonalButton(
+                    onClick = {
+                        onOpenUrl(
+                            "https://waze.com/ul?q=" +
+                                Uri.encode(destination) +
+                                "&navigate=yes"
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    WazeBrandIcon(Modifier.size(24.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Waze")
+                }
+            }
+        }
+
+        val actionActivity =
+            currentActivity ?: nextActivity
+
+        actionActivity?.let { activity ->
+            if (!dayHasArrived) {
+                Button(
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        if (isFutureDay) {
+                            "הפעולות ייפתחו ביום הפעילות"
+                        } else {
+                            "לא ניתן לעדכן פעילות"
+                        }
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (activity.liveStatus != "active") {
+                        Button(
+                            onClick = { onStart(activity) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("התחל")
+                        }
                     } else {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { onDepart(actionActivity, "maps") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { GoogleMapsBrandIcon(Modifier.size(23.dp)); Spacer(Modifier.width(6.dp)); Text("צא לדרך") }
-                            OutlinedButton(onClick = { onDepart(actionActivity, "waze") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { WazeBrandIcon(Modifier.size(23.dp)); Spacer(Modifier.width(6.dp)); Text("Waze") }
+                        Button(
+                            onClick = { onFinish(activity) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("סיים")
                         }
                     }
+
+                    OutlinedButton(
+                        onClick = { onSkip(activity) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("דלג")
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onDelay,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("אני מאחר")
                 }
             }
         }
-        if (actionActivity.liveStatus !in setOf("traveling", "arrived", "completed", "skipped") && dayHasArrived) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { onSkip(actionActivity) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("דלג") }
-                OutlinedButton(onClick = onDelay, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("אני מאחר") }
-            }
-        }
+
     }
 }
 
@@ -774,20 +993,8 @@ private fun TodayActivityRow(
                         color = Color(0xFF2E7D56),
                         style = MaterialTheme.typography.labelSmall
                     )
-                    activity.liveStatus == "traveling" -> Text(
-                        "בדרך",
-                        color = Aqua,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    activity.liveStatus == "arrived" -> Text(
-                        "הגעת ליעד",
-                        color = Color(0xFF2E7D56),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
-                    )
                     activity.liveStatus == "active" || isCurrent -> Text(
-                        "פעילות נוכחית",
+                        "מתבצעת עכשיו",
                         color = Sky,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold
@@ -867,13 +1074,6 @@ private fun TodayActivityRow(
             }
         }
     }
-}
-
-private fun actualTransitionMinutesToday(activity: ActivityItem): Int? {
-    val departure = activityClockMinutesToday(activity.departureTimeActual) ?: return null
-    val arrival = activityClockMinutesToday(activity.arrivalTimeActual) ?: return null
-    val adjustedArrival = if (arrival < departure) arrival + 24 * 60 else arrival
-    return (adjustedArrival - departure).coerceAtLeast(0)
 }
 
 private fun applyLiveDelay(

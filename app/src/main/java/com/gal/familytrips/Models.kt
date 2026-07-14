@@ -31,9 +31,7 @@ data class ActivityItem(
     val liveStatus: String = "waiting",
     val actualStartTime: String = "",
     val actualEndTime: String = "",
-    val skipped: Boolean = false,
-    val departureTimeActual: String = "",
-    val arrivalTimeActual: String = ""
+    val skipped: Boolean = false
 )
 
 @Serializable
