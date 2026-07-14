@@ -1066,6 +1066,7 @@ private fun TripDatePickerField(
 private fun AppState.replaceTrip(updated: Trip): AppState =
     copy(trips = trips.map { if (it.id == updated.id) updated else it })
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TripsScreen(
     state: AppState,
