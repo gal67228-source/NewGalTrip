@@ -1087,6 +1087,9 @@ private fun TripsScreen(
     var tripToDelete by remember {
         mutableStateOf<Trip?>(null)
     }
+    var showAddTripOptions by remember {
+        mutableStateOf(false)
+    }
     var importError by remember {
         mutableStateOf<String?>(null)
     }
@@ -1321,6 +1324,27 @@ private fun TripsScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text("⌄")
+            }
+        }
+
+        item {
+            FilledTonalButton(
+                onClick = {
+                    showAddTripOptions = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(
+                    "+",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "הוספת טיול",
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
@@ -1644,45 +1668,6 @@ private fun TripsScreen(
             }
         }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement =
-                    Arrangement.spacedBy(8.dp)
-            ) {
-                SoftActionButton(
-                    text = "עריכה",
-                    emoji = "✏️",
-                    onClick = {
-                        editingTrip = currentTrip
-                    },
-                    container = SoftSun,
-                    contentColor = Color(0xFF8F6500),
-                    modifier = Modifier.weight(1f)
-                )
-                SoftActionButton(
-                    text = "שיתוף קובץ",
-                    emoji = "📤",
-                    onClick = {
-                        onShareTrip(currentTrip)
-                    },
-                    container = SoftBlue,
-                    contentColor = Sky,
-                    modifier = Modifier.weight(1f)
-                )
-                SoftActionButton(
-                    text = "ניהול",
-                    emoji = "⚙️",
-                    onClick = {
-                        showTripManager = true
-                    },
-                    container = SoftLavender,
-                    contentColor = Navy,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
         if (state.trips.size > 1) {
             item {
                 Text(
@@ -1749,23 +1734,6 @@ private fun TripsScreen(
             }
         }
 
-        item {
-            SoftActionButton(
-                text = "ייבוא קובץ .gtrip",
-                emoji = "📥",
-                onClick = {
-                    importLauncher.launch(
-                        arrayOf(
-                            "application/zip",
-                            "application/octet-stream"
-                        )
-                    )
-                },
-                container = SoftAqua,
-                contentColor = Aqua,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
     }
 
     if (importText != null) {
@@ -1955,9 +1923,92 @@ private fun TripsScreen(
                     }
                 }
 
+                FilledTonalButton(
+                    onClick = {
+                        showTripManager = false
+                        showAddTripOptions = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        "+",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "הוספת טיול",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
                 Spacer(Modifier.height(18.dp))
             }
         }
+    }
+
+    if (showAddTripOptions) {
+        AlertDialog(
+            onDismissRequest = {
+                showAddTripOptions = false
+            },
+            title = {
+                Text("הוספת טיול")
+            },
+            text = {
+                Column(
+                    verticalArrangement =
+                        Arrangement.spacedBy(10.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = {
+                            showAddTripOptions = false
+                            editingTrip = Trip(
+                                id = UUID.randomUUID().toString(),
+                                name = "",
+                                destination = "",
+                                startDate = LocalDate.now()
+                                    .toString(),
+                                endDate = LocalDate.now()
+                                    .plusDays(1)
+                                    .toString()
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("יצירת טיול חדש")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            showAddTripOptions = false
+                            importLauncher.launch(
+                                arrayOf(
+                                    "application/zip",
+                                    "application/octet-stream"
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("ייבוא מקובץ .gtrip")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddTripOptions = false
+                    }
+                ) {
+                    Text("ביטול")
+                }
+            }
+        )
     }
 
     tripToDelete?.let { deleteTrip ->
