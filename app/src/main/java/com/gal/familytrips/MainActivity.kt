@@ -1318,33 +1318,21 @@ private fun TripsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Text(
-                    "החלפת טיול",
-                    modifier = Modifier.weight(1f),
-                    fontWeight = FontWeight.Bold
-                )
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        currentTrip.name,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    Text(
+                        "בחירת טיול",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary
+                    )
+                }
                 Text("⌄")
-            }
-        }
-
-        item {
-            FilledTonalButton(
-                onClick = {
-                    showAddTripOptions = true
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text(
-                    "+",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "הוספת טיול",
-                    fontWeight = FontWeight.Bold
-                )
             }
         }
 
