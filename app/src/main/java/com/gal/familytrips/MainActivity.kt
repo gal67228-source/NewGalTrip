@@ -60,17 +60,24 @@ import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     private lateinit var store: TripStore
+    private lateinit var cloudManager: FirebaseCloudManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = TripStore(this)
+        cloudManager = FirebaseCloudManager(this)
 
         setContent {
             GalTripsTheme {
                 var state by remember { mutableStateOf<AppState?>(null) }
 
                 LaunchedEffect(Unit) {
-                    state = store.load()
+                    val loaded = store.load()
+                    state = loaded.copy(
+                        currentUser =
+                            cloudManager.currentProfile()
+                                ?: loaded.currentUser
+                    )
                 }
 
                 state?.let { loaded ->
@@ -82,6 +89,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onOpenUrl = ::openUrl,
                         onShareTrip = { shareTripPackage(it) },
+                        cloudManager = cloudManager,
                         onImportTrip = { raw ->
                             runCatching { store.importTrip(raw) }.onSuccess { trip ->
                                 val imported = trip.copy(id = UUID.randomUUID().toString(), name = trip.name + " (מיובא)")
@@ -143,6 +151,7 @@ fun GalTripsApp(
     onStateChange: (AppState) -> Unit,
     onOpenUrl: (String) -> Unit,
     onShareTrip: (Trip) -> Unit,
+    cloudManager: FirebaseCloudManager,
     onImportTrip: (String) -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -203,6 +212,7 @@ fun GalTripsApp(
                     state,
                     onStateChange,
                     onShareTrip,
+                    cloudManager,
                     onImportTrip,
                     Modifier.padding(padding)
                 )
@@ -1072,6 +1082,7 @@ private fun TripsScreen(
     state: AppState,
     onStateChange: (AppState) -> Unit,
     onShareTrip: (Trip) -> Unit,
+    cloudManager: FirebaseCloudManager,
     onImportTrip: (String) -> Unit,
     modifier: Modifier
 ) {
@@ -1093,6 +1104,13 @@ private fun TripsScreen(
     var importError by remember {
         mutableStateOf<String?>(null)
     }
+    var cloudMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+    var cloudBusy by remember {
+        mutableStateOf(false)
+    }
+    val cloudScope = rememberCoroutineScope()
     val context = LocalContext.current
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -1125,6 +1143,45 @@ private fun TripsScreen(
     val currentTrip = state.trips.firstOrNull {
         it.id == state.currentTripId
     } ?: state.trips.first()
+
+    DisposableEffect(
+        currentTrip.id,
+        currentTrip.cloudEnabled,
+        state.currentUser?.userId
+    ) {
+        if (
+            !currentTrip.cloudEnabled ||
+            state.currentUser == null
+        ) {
+            onDispose {}
+        } else {
+            val registration =
+                cloudManager.listenToTrip(
+                    tripId = currentTrip.id,
+                    onTrip = { remoteTrip ->
+                        if (
+                            remoteTrip.updatedBy !=
+                                state.currentUser.userId &&
+                            remoteTrip.cloudRevision >=
+                                currentTrip.cloudRevision
+                        ) {
+                            onStateChange(
+                                state.replaceTrip(
+                                    remoteTrip
+                                )
+                            )
+                        }
+                    },
+                    onError = {
+                        cloudMessage = it
+                    }
+                )
+
+            onDispose {
+                registration.remove()
+            }
+        }
+    }
 
     val today = LocalDate.now()
     val startDate = runCatching {
@@ -1510,41 +1567,56 @@ private fun TripsScreen(
             SectionCard(containerColor = SoftBlue) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment =
+                        Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Text(
                             "שיתוף משפחתי בענן",
                             fontWeight = FontWeight.Bold,
                             color = Navy
                         )
                         Text(
-                            if (currentTrip.cloudEnabled) {
-                                "הטיול מחובר לענן"
-                            } else {
-                                "התשתית מוכנה · Firebase עדיין לא מחובר"
+                            when {
+                                state.currentUser == null ->
+                                    "נדרשת התחברות עם Google"
+                                currentTrip.cloudEnabled ->
+                                    "הטיול מסונכרן עם Firestore"
+                                else ->
+                                    "החשבון מחובר · הטיול עדיין מקומי"
                             },
-                            style = MaterialTheme.typography.bodySmall,
+                            style =
+                                MaterialTheme.typography.bodySmall,
                             color = TextSecondary
                         )
                     }
 
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = if (currentTrip.cloudEnabled) {
+                        color = if (
+                            currentTrip.cloudEnabled
+                        ) {
                             SoftMint
                         } else {
                             SoftSun
                         }
                     ) {
                         Text(
-                            if (currentTrip.cloudEnabled) "מחובר" else "מקומי",
+                            if (currentTrip.cloudEnabled) {
+                                "מסונכרן"
+                            } else {
+                                "מקומי"
+                            },
                             modifier = Modifier.padding(
                                 horizontal = 9.dp,
                                 vertical = 5.dp
                             ),
                             fontWeight = FontWeight.Bold,
-                            color = if (currentTrip.cloudEnabled) {
+                            color = if (
+                                currentTrip.cloudEnabled
+                            ) {
                                 Color(0xFF2E7D56)
                             } else {
                                 Color(0xFF8F6500)
@@ -1553,19 +1625,175 @@ private fun TripsScreen(
                     }
                 }
 
-                currentTrip.members.take(3).forEach { member ->
+                state.currentUser?.let { user ->
                     Text(
-                        "• ${member.displayName} · ${CloudFoundation.roleLabel(member.role)}",
-                        style = MaterialTheme.typography.bodySmall,
+                        "מחובר: ${user.displayName}",
+                        style =
+                            MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                    if (user.email.isNotBlank()) {
+                        Text(
+                            user.email,
+                            style =
+                                MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                when {
+                    state.currentUser == null -> {
+                        Button(
+                            enabled = !cloudBusy,
+                            onClick = {
+                                cloudBusy = true
+                                cloudScope.launch {
+                                    runCatching {
+                                        cloudManager
+                                            .signInWithGoogle()
+                                    }.onSuccess { profile ->
+                                        onStateChange(
+                                            state.copy(
+                                                currentUser =
+                                                    profile
+                                            )
+                                        )
+                                        cloudMessage =
+                                            "ההתחברות הצליחה"
+                                    }.onFailure {
+                                        cloudMessage =
+                                            it.localizedMessage
+                                                ?: "ההתחברות נכשלה"
+                                    }
+                                    cloudBusy = false
+                                }
+                            },
+                            modifier =
+                                Modifier.fillMaxWidth(),
+                            shape =
+                                RoundedCornerShape(14.dp)
+                        ) {
+                            if (cloudBusy) {
+                                CircularProgressIndicator(
+                                    modifier =
+                                        Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(
+                                    Modifier.width(8.dp)
+                                )
+                            }
+                            Text("התחברות עם Google")
+                        }
+                    }
+
+                    !currentTrip.cloudEnabled -> {
+                        Button(
+                            enabled = !cloudBusy,
+                            onClick = {
+                                val profile =
+                                    state.currentUser
+                                        ?: return@Button
+                                cloudBusy = true
+                                cloudScope.launch {
+                                    runCatching {
+                                        cloudManager.uploadTrip(
+                                            currentTrip,
+                                            profile
+                                        )
+                                    }.onSuccess {
+                                        uploaded ->
+                                        onStateChange(
+                                            state.replaceTrip(
+                                                uploaded
+                                            )
+                                        )
+                                        cloudMessage =
+                                            "הטיול הועלה לענן"
+                                    }.onFailure {
+                                        cloudMessage =
+                                            it.localizedMessage
+                                                ?: "העלאת הטיול נכשלה"
+                                    }
+                                    cloudBusy = false
+                                }
+                            },
+                            modifier =
+                                Modifier.fillMaxWidth(),
+                            shape =
+                                RoundedCornerShape(14.dp)
+                        ) {
+                            if (cloudBusy) {
+                                CircularProgressIndicator(
+                                    modifier =
+                                        Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(
+                                    Modifier.width(8.dp)
+                                )
+                            }
+                            Text("הפעלת סנכרון לטיול")
+                        }
+                    }
+
+                    else -> {
+                        Text(
+                            "עדכונים ממכשיר אחר יופיעו אוטומטית. שינויים מקומיים יישמרו בענן בשלבי הסנכרון הבאים.",
+                            style =
+                                MaterialTheme.typography.labelSmall,
+                            color = Sky
+                        )
+
+                        OutlinedButton(
+                            onClick = {
+                                val profile =
+                                    state.currentUser
+                                        ?: return@OutlinedButton
+                                cloudBusy = true
+                                cloudScope.launch {
+                                    runCatching {
+                                        cloudManager.uploadTrip(
+                                            currentTrip,
+                                            profile
+                                        )
+                                    }.onSuccess {
+                                        uploaded ->
+                                        onStateChange(
+                                            state.replaceTrip(
+                                                uploaded
+                                            )
+                                        )
+                                        cloudMessage =
+                                            "הסנכרון הושלם"
+                                    }.onFailure {
+                                        cloudMessage =
+                                            it.localizedMessage
+                                                ?: "הסנכרון נכשל"
+                                    }
+                                    cloudBusy = false
+                                }
+                            },
+                            enabled = !cloudBusy,
+                            modifier =
+                                Modifier.fillMaxWidth(),
+                            shape =
+                                RoundedCornerShape(14.dp)
+                        ) {
+                            Text("סנכרן עכשיו")
+                        }
+                    }
+                }
+
+                cloudMessage?.let {
+                    Text(
+                        it,
+                        style =
+                            MaterialTheme.typography.bodySmall,
                         color = TextSecondary
                     )
                 }
-
-                Text(
-                    "השלב הבא: חיבור Firebase, כניסה עם Google וסנכרון בזמן אמת.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Sky
-                )
             }
         }
 

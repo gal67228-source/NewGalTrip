@@ -24,6 +24,7 @@ jobs:
           test -f build.gradle
           test -f gradle.properties
           test -f app/build.gradle
+          test -f app/google-services.json
           test -f app/src/main/java/com/gal/familytrips/MainActivity.kt
 
           echo "Repository root:"
@@ -122,7 +123,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gal-Family-Trips-V8-6-0-Cloud-Foundation-APK
+          name: Gal-Family-Trips-V8-6-1-Firebase-Auth-Firestore-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

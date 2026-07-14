@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "263573314214",
+    "project_id": "gal-family-trips",
+    "storage_bucket": "gal-family-trips.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:263573314214:android:0577749ad50bfa7968f267",
+        "android_client_info": {
+          "package_name": "com.gal.familytrips"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "263573314214-otvm1jb16mve53bnq5sa8nb486pf89km.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gal.familytrips",
+            "certificate_hash": "792ad1cddf78e5b9f31bf12c18ee8e3acaad7860"
+          }
+        },
+        {
+          "client_id": "263573314214-si93blrt2k4n0n5q7i5r6p59rq9bqljv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJSw2v917_nmT-fsi8PO9RKaxsbmH8qFY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "263573314214-si93blrt2k4n0n5q7i5r6p59rq9bqljv.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
