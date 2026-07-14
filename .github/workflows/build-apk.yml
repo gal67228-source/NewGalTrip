@@ -68,6 +68,41 @@ jobs:
           test -n "$ROUTES_WORKER_URL" || { echo "::error::Missing ROUTES_WORKER_URL secret"; exit 1; }
           test -n "$ROUTES_APP_TOKEN" || { echo "::error::Missing ROUTES_APP_TOKEN secret"; exit 1; }
 
+      - name: Show Firebase SHA fingerprints
+        shell: bash
+        run: |
+          set -e
+
+          KEYSTORE="$HOME/.android/debug.keystore"
+          mkdir -p "$HOME/.android"
+
+          if [ ! -f "$KEYSTORE" ]; then
+            keytool -genkeypair \
+              -v \
+              -keystore "$KEYSTORE" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
+          fi
+
+          echo "============================================"
+          echo "FIREBASE DEBUG SIGNING FINGERPRINTS"
+          echo "============================================"
+
+          keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -alias androiddebugkey \
+            -storepass android \
+            -keypass android | grep -E "SHA1:|SHA256:"
+
+          echo "============================================"
+          echo "Copy both values into Firebase Project Settings"
+          echo "============================================"
+
       - name: Build APK
         shell: bash
         env:
