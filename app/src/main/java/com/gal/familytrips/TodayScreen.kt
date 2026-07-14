@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun TodayScreen(
@@ -37,6 +38,10 @@ fun TodayScreen(
             ?: sortedDays.lastOrNull()
     }
 
+    var showDelayDialog by remember(selectedDay?.id) {
+        mutableStateOf(false)
+    }
+
     if (selectedDay == null) {
         Box(
             modifier = modifier.fillMaxSize(),
@@ -48,7 +53,10 @@ fun TodayScreen(
     }
 
     val activities = selectedDay.activities
-    val completedCount = activities.count { it.completed }
+    val completedCount = activities.count {
+        it.completed && !it.skipped
+    }
+    val skippedCount = activities.count { it.skipped }
     val totalCount = activities.size
     val progress = if (totalCount == 0) {
         0f
@@ -73,11 +81,15 @@ fun TodayScreen(
         nowMinutes,
         isActualToday
     ) {
-        if (!isActualToday) {
+        activities.firstOrNull {
+            it.liveStatus == "active" &&
+                !it.completed &&
+                !it.skipped
+        } ?: if (!isActualToday) {
             null
         } else {
             activities.firstOrNull { activity ->
-                if (activity.completed) {
+                if (activity.completed || activity.skipped) {
                     false
                 } else {
                     val start = activityClockMinutesToday(activity.time)
@@ -105,20 +117,27 @@ fun TodayScreen(
         when {
             currentIndex >= 0 -> {
                 activities.drop(currentIndex + 1)
-                    .firstOrNull { !it.completed }
+                    .firstOrNull {
+                        !it.completed && !it.skipped
+                    }
             }
 
             isActualToday -> {
                 activities.firstOrNull { activity ->
                     !activity.completed &&
+                        !activity.skipped &&
                         (
                             activityClockMinutesToday(activity.time)
                                 ?: Int.MAX_VALUE
                             ) >= nowMinutes
-                } ?: activities.firstOrNull { !it.completed }
+                } ?: activities.firstOrNull {
+                    !it.completed && !it.skipped
+                }
             }
 
-            else -> activities.firstOrNull { !it.completed }
+            else -> activities.firstOrNull {
+                !it.completed && !it.skipped
+            }
         }
     }
 
@@ -210,6 +229,7 @@ fun TodayScreen(
         item {
             TodayProgressCard(
                 completedCount = completedCount,
+                skippedCount = skippedCount,
                 totalCount = totalCount,
                 progress = progress,
                 selectedDay = selectedDay,
@@ -227,36 +247,128 @@ fun TodayScreen(
                 dayHasArrived = dayHasArrived,
                 isFutureDay = isFutureDay,
                 onOpenUrl = onOpenUrl,
-                onCompleteCurrent = {
-                    val activityToComplete =
-                        currentActivity ?: nextActivity
+                onStart = { activity ->
+                    val nowText = LocalTime.now()
+                        .format(DateTimeFormatter.ofPattern("HH:mm"))
 
-                    if (
-                        activityToComplete != null &&
-                        dayHasArrived
-                    ) {
-                        val updatedDay = selectedDay.copy(
-                            activities = selectedDay.activities.map {
-                                if (it.id == activityToComplete.id) {
-                                    it.copy(completed = true)
+                    val updatedDay = selectedDay.copy(
+                        activities = selectedDay.activities.map {
+                            when {
+                                it.id == activity.id -> it.copy(
+                                    liveStatus = "active",
+                                    actualStartTime = nowText,
+                                    completed = false,
+                                    skipped = false
+                                )
+                                it.liveStatus == "active" -> it.copy(
+                                    liveStatus = "waiting"
+                                )
+                                else -> it
+                            }
+                        }
+                    )
+
+                    onTripChange(
+                        trip.copy(
+                            days = trip.days.map {
+                                if (it.id == selectedDay.id) {
+                                    updatedDay
                                 } else {
                                     it
                                 }
                             }
                         )
+                    )
+                },
+                onFinish = { activity ->
+                    val nowText = LocalTime.now()
+                        .format(DateTimeFormatter.ofPattern("HH:mm"))
 
-                        onTripChange(
-                            trip.copy(
-                                days = trip.days.map {
-                                    if (it.id == selectedDay.id) {
-                                        updatedDay
-                                    } else {
-                                        it
-                                    }
+                    val updatedDay = selectedDay.copy(
+                        activities = selectedDay.activities.map {
+                            if (it.id == activity.id) {
+                                it.copy(
+                                    liveStatus = "completed",
+                                    actualEndTime = nowText,
+                                    completed = true,
+                                    skipped = false
+                                )
+                            } else {
+                                it
+                            }
+                        }
+                    )
+
+                    onTripChange(
+                        trip.copy(
+                            days = trip.days.map {
+                                if (it.id == selectedDay.id) {
+                                    updatedDay
+                                } else {
+                                    it
                                 }
+                            }
+                        )
+                    )
+                },
+                onSkip = { activity ->
+                    val index = selectedDay.activities.indexOfFirst {
+                        it.id == activity.id
+                    }
+                    val updatedActivities = selectedDay.activities
+                        .map {
+                            if (it.id == activity.id) {
+                                it.copy(
+                                    liveStatus = "skipped",
+                                    skipped = true,
+                                    completed = false,
+                                    actualEndTime = LocalTime.now()
+                                        .format(
+                                            DateTimeFormatter.ofPattern(
+                                                "HH:mm"
+                                            )
+                                        )
+                                )
+                            } else {
+                                it
+                            }
+                        }
+                        .toMutableList()
+
+                    if (index >= 0) {
+                        updatedActivities.removeAt(index)
+                        updatedActivities.add(
+                            index,
+                            activity.copy(
+                                liveStatus = "skipped",
+                                skipped = true,
+                                completed = false
                             )
                         )
                     }
+
+                    val normalized = normalizeLiveTimeline(
+                        updatedActivities
+                    )
+
+                    val updatedDay = selectedDay.copy(
+                        activities = normalized
+                    )
+
+                    onTripChange(
+                        trip.copy(
+                            days = trip.days.map {
+                                if (it.id == selectedDay.id) {
+                                    updatedDay
+                                } else {
+                                    it
+                                }
+                            }
+                        )
+                    )
+                },
+                onDelay = {
+                    showDelayDialog = true
                 }
             )
         }
@@ -404,11 +516,109 @@ fun TodayScreen(
             )
         }
     }
+
+    if (showDelayDialog) {
+        DelayDayDialog(
+            onDismiss = {
+                showDelayDialog = false
+            },
+            onConfirm = { delayMinutes ->
+                val updatedDay = selectedDay.copy(
+                    activities = applyLiveDelay(
+                        activities = selectedDay.activities,
+                        delayMinutes = delayMinutes
+                    )
+                )
+
+                onTripChange(
+                    trip.copy(
+                        days = trip.days.map {
+                            if (it.id == selectedDay.id) {
+                                updatedDay
+                            } else {
+                                it
+                            }
+                        }
+                    )
+                )
+                showDelayDialog = false
+            }
+        )
+    }
 }
+
+@Composable
+private fun DelayDayDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit
+) {
+    var customMinutes by remember {
+        mutableStateOf("")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("כמה זמן האיחור?")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(10, 15, 30, 45, 60).forEach { minutes ->
+                    OutlinedButton(
+                        onClick = {
+                            onConfirm(minutes)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("$minutes דקות")
+                    }
+                }
+
+                OutlinedTextField(
+                    value = customMinutes,
+                    onValueChange = {
+                        customMinutes = it.filter(Char::isDigit)
+                    },
+                    label = {
+                        Text("זמן מותאם בדקות")
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = (
+                    customMinutes.toIntOrNull()
+                        ?: 0
+                    ) > 0,
+                onClick = {
+                    onConfirm(
+                        customMinutes.toIntOrNull()
+                            ?.coerceAtLeast(1)
+                            ?: 1
+                    )
+                }
+            ) {
+                Text("החל")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
+}
+
 
 @Composable
 private fun TodayProgressCard(
     completedCount: Int,
+    skippedCount: Int,
     totalCount: Int,
     progress: Float,
     selectedDay: TripDay,
@@ -430,7 +640,7 @@ private fun TodayProgressCard(
                     color = Navy
                 )
                 Text(
-                    "$completedCount מתוך $totalCount פעילויות הושלמו",
+                    "$completedCount הושלמו · $skippedCount דולגו · $totalCount סה״כ",
                     color = TextSecondary,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -462,7 +672,10 @@ private fun TodayCommandCard(
     dayHasArrived: Boolean,
     isFutureDay: Boolean,
     onOpenUrl: (String) -> Unit,
-    onCompleteCurrent: () -> Unit
+    onStart: (ActivityItem) -> Unit,
+    onFinish: (ActivityItem) -> Unit,
+    onSkip: (ActivityItem) -> Unit,
+    onDelay: () -> Unit
 ) {
     SectionCard(
         containerColor = when {
@@ -629,33 +842,67 @@ private fun TodayCommandCard(
             }
         }
 
-        Button(
-            onClick = onCompleteCurrent,
-            enabled = dayHasArrived,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Text(
-                when {
-                    isFutureDay ->
-                        "אפשר לסמן רק ביום הפעילות"
+        val actionActivity =
+            currentActivity ?: nextActivity
 
-                    currentActivity != null ->
-                        "סיימתי את הפעילות"
-
-                    else ->
-                        "סמן את הפעילות כהושלמה"
+        actionActivity?.let { activity ->
+            if (!dayHasArrived) {
+                Button(
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        if (isFutureDay) {
+                            "הפעולות ייפתחו ביום הפעילות"
+                        } else {
+                            "לא ניתן לעדכן פעילות"
+                        }
+                    )
                 }
-            )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (activity.liveStatus != "active") {
+                        Button(
+                            onClick = { onStart(activity) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("התחל")
+                        }
+                    } else {
+                        Button(
+                            onClick = { onFinish(activity) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("סיים")
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { onSkip(activity) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("דלג")
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onDelay,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("אני מאחר")
+                }
+            }
         }
 
-        if (!dayHasArrived) {
-            Text(
-                "הפעילות עדיין לא הגיעה ולכן לא ניתן לסמן אותה כהושלמה.",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary
-            )
-        }
     }
 }
 
@@ -735,12 +982,18 @@ private fun TodayActivityRow(
                 }
 
                 when {
+                    activity.skipped -> Text(
+                        "דולגה",
+                        color = Coral,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
                     activity.completed -> Text(
                         "הושלמה",
                         color = Color(0xFF2E7D56),
                         style = MaterialTheme.typography.labelSmall
                     )
-                    isCurrent -> Text(
+                    activity.liveStatus == "active" || isCurrent -> Text(
                         "מתבצעת עכשיו",
                         color = Sky,
                         style = MaterialTheme.typography.labelSmall,
@@ -751,6 +1004,35 @@ private fun TodayActivityRow(
                         color = Aqua,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold
+                    )
+                    else -> Text(
+                        "ממתינה",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+
+                if (
+                    activity.actualStartTime.isNotBlank() ||
+                    activity.actualEndTime.isNotBlank()
+                ) {
+                    Text(
+                        buildString {
+                            append("בפועל: ")
+                            append(
+                                activity.actualStartTime.ifBlank {
+                                    "--:--"
+                                }
+                            )
+                            append("–")
+                            append(
+                                activity.actualEndTime.ifBlank {
+                                    "--:--"
+                                }
+                            )
+                        },
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.labelSmall
                     )
                 }
             }
@@ -792,6 +1074,105 @@ private fun TodayActivityRow(
             }
         }
     }
+}
+
+private fun applyLiveDelay(
+    activities: List<ActivityItem>,
+    delayMinutes: Int
+): List<ActivityItem> {
+    val delay = delayMinutes.coerceAtLeast(0)
+    var delayApplied = false
+
+    return activities.map { activity ->
+        when {
+            activity.completed || activity.skipped ->
+                activity
+
+            isFixedActivityToday(activity) ->
+                activity
+
+            else -> {
+                val original =
+                    activityClockMinutesToday(activity.time)
+                        ?: return@map activity
+
+                val shifted = original + delay
+                delayApplied = true
+
+                activity.copy(
+                    time = minutesToClockToday(shifted)
+                )
+            }
+        }
+    }.let {
+        if (delayApplied) normalizeLiveTimeline(it) else it
+    }
+}
+
+private fun normalizeLiveTimeline(
+    activities: List<ActivityItem>
+): List<ActivityItem> {
+    if (activities.isEmpty()) {
+        return emptyList()
+    }
+
+    val activeActivities = activities.filterNot {
+        it.skipped
+    }
+
+    if (activeActivities.isEmpty()) {
+        return activities
+    }
+
+    val firstStart = activeActivities
+        .mapNotNull {
+            activityClockMinutesToday(it.time)
+        }
+        .minOrNull()
+        ?: 9 * 60
+
+    var cursor = firstStart
+
+    val normalizedById = activeActivities.associate { activity ->
+        val fixed = isFixedActivityToday(activity)
+        val originalStart =
+            activityClockMinutesToday(activity.time)
+
+        val normalized = if (
+            fixed && originalStart != null
+        ) {
+            activity
+        } else {
+            activity.copy(
+                time = minutesToClockToday(cursor)
+            )
+        }
+
+        val effectiveStart =
+            activityClockMinutesToday(normalized.time)
+                ?: cursor
+
+        cursor = effectiveStart +
+            activityDurationMinutesToday(
+                normalized.duration
+            ) +
+            normalized.transitionMinutes.coerceAtLeast(0)
+
+        activity.id to normalized
+    }
+
+    return activities.map { activity ->
+        normalizedById[activity.id] ?: activity
+    }
+}
+
+private fun isFixedActivityToday(
+    activity: ActivityItem
+): Boolean {
+    return activity.fixedTime ||
+        activity.name.contains("טיסה") ||
+        activity.name.contains("צ׳ק־אין") ||
+        activity.name.contains("צ׳ק־אאוט")
 }
 
 private fun canResetCompletionToday(

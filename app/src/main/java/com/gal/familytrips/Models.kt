@@ -27,7 +27,11 @@ data class ActivityItem(
     val routeSource: String = "estimate",
     val routeStatus: String = "",
     val routeCacheKey: String = "",
-    val routeUpdatedAt: Long = 0L
+    val routeUpdatedAt: Long = 0L,
+    val liveStatus: String = "waiting",
+    val actualStartTime: String = "",
+    val actualEndTime: String = "",
+    val skipped: Boolean = false
 )
 
 @Serializable
