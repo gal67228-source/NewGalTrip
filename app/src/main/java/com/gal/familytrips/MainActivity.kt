@@ -7360,14 +7360,17 @@ private fun ExpensesScreen(
                             selectedCategory = category
                         },
                         label = {
-                            Text(
-                                "${budgetCategoryEmoji(category)} $category"
-                            )
-                        },
-                        supportingText = {
-                            Text(
-                                "₪${formatBudgetAmount(actual)} / ₪${formatBudgetAmount(planned)}"
-                            )
+                            Column {
+                                Text(
+                                    "${budgetCategoryEmoji(category)} $category"
+                                )
+                                Text(
+                                    "₪${formatBudgetAmount(actual)} / ₪${formatBudgetAmount(planned)}",
+                                    style =
+                                        MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary
+                                )
+                            }
                         }
                     )
                 }
