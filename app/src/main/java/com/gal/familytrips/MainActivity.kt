@@ -7155,86 +7155,148 @@ private fun ExpensesScreen(
     onTripChange: (Trip) -> Unit,
     modifier: Modifier
 ) {
-    var selectedCategory by remember { mutableStateOf("הכול") }
-    var editingTemplate by remember { mutableStateOf<BudgetTemplate?>(null) }
-    var editingCustomExpense by remember { mutableStateOf<Expense?>(null) }
-    var addCustomExpense by remember { mutableStateOf(false) }
-    var addCategory by remember { mutableStateOf(false) }
-    var pendingCategory by remember { mutableStateOf<String?>(null) }
+    var selectedCategory by remember {
+        mutableStateOf("הכול")
+    }
+    var editingExpense by remember {
+        mutableStateOf<Expense?>(null)
+    }
+    var creatingExpense by remember {
+        mutableStateOf(false)
+    }
 
     val templates = suggestedBudgetTemplates(trip)
-    val templateIds = templates.map { it.id }.toSet()
-    val customExpenses = trip.expenses.filterNot { it.id in templateIds }
 
-    val defaultCategories = listOf(
-        "טיסות",
-        "מלונות",
-        "תחבורה",
-        "אטרקציות",
-        "אוכל",
-        "קניות",
-        "כללי"
-    )
-
-    val categories = (
-        defaultCategories +
-            templates.map { it.category } +
-            trip.expenses.map { it.category } +
-            listOfNotNull(pendingCategory)
-        )
-        .filter { it.isNotBlank() }
-        .distinct()
-
-    val categorySummaries = categories.map { category ->
-        val categoryTemplates = templates.filter { it.category == category }
-        val categoryExpenses = trip.expenses.filter { it.category == category }
-        val enteredCount = categoryTemplates.count { template ->
-            trip.expenses.any { it.id == template.id && it.amount > 0 }
+    val normalizedExpenses = remember(
+        trip.expenses,
+        templates
+    ) {
+        val byId = trip.expenses.associateBy { it.id }
+        val automatic = templates.map { template ->
+            byId[template.id] ?: Expense(
+                id = template.id,
+                title = template.title,
+                amount = 0.0,
+                currency = template.currency,
+                category = template.category,
+                date = template.date,
+                plannedAmount = 0.0,
+                actualAmount = 0.0,
+                paymentStatus = "מתוכנן",
+                sourceType = "אוטומטי",
+                sourceId = template.id,
+                exchangeRateToIls = 1.0,
+                exchangeRateDate = template.date
+            )
         }
 
-        BudgetCategorySummary(
-            category = category,
-            enteredCount = enteredCount,
-            totalCount = categoryTemplates.size,
-            totals = categoryExpenses
-                .filter { it.amount > 0 }
-                .groupBy { it.currency }
-                .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }
+        val custom = trip.expenses.filterNot {
+            expense ->
+            templates.any { it.id == expense.id }
+        }
+
+        automatic + custom
+    }
+
+    val categories = (
+        listOf(
+            "טיסות",
+            "מלונות",
+            "אטרקציות",
+            "רכב והסעות",
+            "אוכל",
+            "קניות",
+            "תחבורה ציבורית",
+            "ביטוח",
+            "שונות"
+        ) + normalizedExpenses.map {
+            smartBudgetCategory(it.category)
+        }
+    ).distinct()
+
+    val visibleExpenses = normalizedExpenses
+        .map {
+            if (
+                it.category ==
+                    smartBudgetCategory(it.category)
+            ) {
+                it
+            } else {
+                it.copy(
+                    category =
+                        smartBudgetCategory(it.category)
+                )
+            }
+        }
+        .filter {
+            selectedCategory == "הכול" ||
+                it.category == selectedCategory
+        }
+        .sortedWith(
+            compareBy<Expense> { it.date }
+                .thenBy { it.title }
+        )
+
+    val plannedIls = normalizedExpenses.sumOf {
+        smartExpensePlanned(it) *
+            it.exchangeRateToIls.coerceAtLeast(0.0)
+    }
+    val actualIls = normalizedExpenses.sumOf {
+        smartExpenseActual(it) *
+            it.exchangeRateToIls.coerceAtLeast(0.0)
+    }
+    val remainingIls =
+        (plannedIls - actualIls).coerceAtLeast(0.0)
+
+    val categoryData = categories.map { category ->
+        val items = normalizedExpenses.filter {
+            smartBudgetCategory(it.category) ==
+                category
+        }
+        Triple(
+            category,
+            items.sumOf {
+                smartExpensePlanned(it) *
+                    it.exchangeRateToIls
+            },
+            items.sumOf {
+                smartExpenseActual(it) *
+                    it.exchangeRateToIls
+            }
         )
     }
 
-    val visibleTemplates = if (selectedCategory == "הכול") {
-        templates
-    } else {
-        templates.filter { it.category == selectedCategory }
-    }
-
-    val visibleCustomExpenses = if (selectedCategory == "הכול") {
-        customExpenses
-    } else {
-        customExpenses.filter { it.category == selectedCategory }
-    }
-
-    val allEnteredExpenses = trip.expenses.filter { it.amount > 0 }
-    val globalTotals = allEnteredExpenses
-        .groupBy { it.currency }
-        .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }
-
-    val completedTemplates = templates.count { template ->
-        trip.expenses.any { it.id == template.id && it.amount > 0 }
-    }
+    val dailyTotals = normalizedExpenses
+        .filter {
+            smartExpenseActual(it) > 0
+        }
+        .groupBy { it.date }
+        .mapValues { (_, items) ->
+            items.sumOf {
+                smartExpenseActual(it) *
+                    it.exchangeRateToIls
+            }
+        }
+        .toList()
+        .sortedBy { it.first }
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 28.dp)
+            .padding(
+                horizontal = 14.dp,
+                vertical = 10.dp
+            ),
+        verticalArrangement =
+            Arrangement.spacedBy(12.dp),
+        contentPadding =
+            PaddingValues(bottom = 28.dp)
     ) {
         item {
             GradientHeader(
-                title = "תקציב",
-                subtitle = "ניהול הוצאות לפי קטגוריות",
+                title = "תקציב חכם",
+                subtitle =
+                    "מתוכנן מול בפועל לפי קטגוריה ויום",
                 emoji = "💰",
                 start = Sun,
                 end = Color(0xFFE79A18)
@@ -7242,245 +7304,955 @@ private fun ExpensesScreen(
         }
 
         item {
-            BudgetOverviewCard(
-                completedTemplates = completedTemplates,
-                totalTemplates = templates.size,
-                totals = globalTotals
+            SmartBudgetOverviewCard(
+                plannedIls = plannedIls,
+                actualIls = actualIls,
+                remainingIls = remainingIls
             )
         }
 
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                AccentButton(
-                    text = "הוצאה",
-                    emoji = "＋",
-                    onClick = { addCustomExpense = true },
-                    color = Color(0xFFE7A62D),
-                    modifier = Modifier.weight(1f)
-                )
-
-                SoftActionButton(
-                    text = "קטגוריה",
-                    emoji = "＋",
-                    onClick = { addCategory = true },
-                    container = SoftSun,
-                    contentColor = Color(0xFF8F6500),
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            AccentButton(
+                text = "הוצאה חדשה",
+                emoji = "＋",
+                onClick = {
+                    creatingExpense = true
+                },
+                color = Color(0xFFE7A62D),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         item {
             Text(
                 "קטגוריות",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                style =
+                    MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Navy
             )
         }
 
         item {
             LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(end = 4.dp)
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
             ) {
                 item {
-                    BudgetCategoryCard(
-                        summary = BudgetCategorySummary(
-                            category = "הכול",
-                            enteredCount = completedTemplates,
-                            totalCount = templates.size,
-                            totals = globalTotals
-                        ),
-                        selected = selectedCategory == "הכול",
-                        onClick = { selectedCategory = "הכול" }
+                    FilterChip(
+                        selected =
+                            selectedCategory == "הכול",
+                        onClick = {
+                            selectedCategory = "הכול"
+                        },
+                        label = {
+                            Text("📊 הכול")
+                        }
                     )
                 }
 
-                items(categorySummaries, key = { it.category }) { summary ->
-                    BudgetCategoryCard(
-                        summary = summary,
-                        selected = selectedCategory == summary.category,
-                        onClick = { selectedCategory = summary.category }
+                items(categoryData) {
+                    (category, planned, actual) ->
+                    FilterChip(
+                        selected =
+                            selectedCategory == category,
+                        onClick = {
+                            selectedCategory = category
+                        },
+                        label = {
+                            Text(
+                                "${budgetCategoryEmoji(category)} $category"
+                            )
+                        },
+                        supportingText = {
+                            Text(
+                                "₪${formatBudgetAmount(actual)} / ₪${formatBudgetAmount(planned)}"
+                            )
+                        }
                     )
                 }
             }
         }
 
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        if (selectedCategory == "הכול") {
-                            "כל סעיפי התקציב"
-                        } else {
-                            selectedCategory
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        "${visibleTemplates.size} סעיפים אוטומטיים",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                }
-
-                if (selectedCategory != "הכול") {
-                    TextButton(onClick = { selectedCategory = "הכול" }) {
-                        Text("הצג הכול")
-                    }
-                }
-            }
+            Text(
+                if (selectedCategory == "הכול") {
+                    "כל סעיפי התקציב"
+                } else {
+                    selectedCategory
+                },
+                style =
+                    MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
         }
 
-        items(visibleTemplates, key = { it.id }) { template ->
-            val savedExpense = trip.expenses.firstOrNull { it.id == template.id }
-
-            ProfessionalBudgetItemCard(
-                template = template,
-                expense = savedExpense,
-                onEnterAmount = { editingTemplate = template },
-                onClear = {
+        items(
+            visibleExpenses,
+            key = { it.id }
+        ) { expense ->
+            SmartBudgetItemCard(
+                expense = expense,
+                onEdit = {
+                    editingExpense = expense
+                },
+                onDelete = {
                     onTripChange(
                         trip.copy(
-                            expenses = trip.expenses.filterNot {
-                                it.id == template.id
-                            }
+                            expenses =
+                                trip.expenses.filterNot {
+                                    it.id == expense.id
+                                }
                         )
                     )
                 }
             )
         }
 
-        if (visibleCustomExpenses.isNotEmpty()) {
+        if (visibleExpenses.isEmpty()) {
             item {
-                Text(
-                    "הוצאות נוספות",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            items(visibleCustomExpenses, key = { it.id }) { expense ->
-                CustomExpenseCard(
-                    expense = expense,
-                    onEdit = { editingCustomExpense = expense },
-                    onDelete = {
-                        onTripChange(
-                            trip.copy(
-                                expenses = trip.expenses.filterNot {
-                                    it.id == expense.id
-                                }
-                            )
-                        )
-                    }
-                )
-            }
-        }
-
-        if (visibleTemplates.isEmpty() && visibleCustomExpenses.isEmpty()) {
-            item {
-                SectionCard(containerColor = CardWhite) {
+                SectionCard(
+                    containerColor = CardWhite
+                ) {
                     Text(
-                        "אין עדיין סעיפים בקטגוריה הזו",
+                        "אין סעיפים בקטגוריה הזו",
                         color = TextSecondary
                     )
                 }
             }
         }
-    }
 
-    editingTemplate?.let { template ->
-        val existing = trip.expenses.firstOrNull { it.id == template.id }
-
-        BudgetAmountDialog(
-            template = template,
-            existing = existing,
-            onDismiss = { editingTemplate = null },
-            onConfirm = { amount, currency ->
-                val updated = Expense(
-                    id = template.id,
-                    title = template.title,
-                    amount = amount,
-                    currency = currency,
-                    category = template.category,
-                    date = template.date
+        if (dailyTotals.isNotEmpty()) {
+            item {
+                Text(
+                    "הוצאות לפי יום",
+                    style =
+                        MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
                 )
-
-                onTripChange(
-                    trip.copy(
-                        expenses = trip.expenses.filterNot {
-                            it.id == template.id
-                        } + updated
-                    )
-                )
-                editingTemplate = null
             }
-        )
+
+            items(dailyTotals) { (date, total) ->
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = CardWhite,
+                    border = BorderStroke(
+                        1.dp,
+                        Color(0xFFE3E9F0)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement =
+                            Arrangement.SpaceBetween
+                    ) {
+                        Text(date, color = TextSecondary)
+                        Text(
+                            "₪${formatBudgetAmount(total)}",
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+                    }
+                }
+            }
+        }
     }
 
-    if (addCustomExpense) {
-        CustomExpenseDialog(
-            categories = categories,
-            defaultCategory = pendingCategory,
-            defaultCurrency = destinationCurrency(trip.destination),
-            defaultDate = trip.startDate,
+    if (creatingExpense) {
+        SmartExpenseDialog(
             existing = null,
+            categories = categories,
+            defaultCurrency =
+                destinationCurrency(
+                    trip.destination
+                ),
+            defaultDate = trip.startDate,
             onDismiss = {
-                addCustomExpense = false
-                pendingCategory = null
+                creatingExpense = false
             },
             onConfirm = { expense ->
                 onTripChange(
-                    trip.copy(expenses = trip.expenses + expense)
+                    trip.copy(
+                        expenses =
+                            trip.expenses + expense
+                    )
                 )
-                addCustomExpense = false
-                pendingCategory = null
-                selectedCategory = expense.category
+                creatingExpense = false
+                selectedCategory =
+                    smartBudgetCategory(
+                        expense.category
+                    )
             }
         )
     }
 
-    editingCustomExpense?.let { expense ->
-        CustomExpenseDialog(
+    editingExpense?.let { expense ->
+        SmartExpenseDialog(
+            existing = expense,
             categories = categories,
-            defaultCategory = expense.category,
             defaultCurrency = expense.currency,
             defaultDate = expense.date,
-            existing = expense,
-            onDismiss = { editingCustomExpense = null },
+            onDismiss = {
+                editingExpense = null
+            },
             onConfirm = { updated ->
                 onTripChange(
                     trip.copy(
-                        expenses = trip.expenses.map {
-                            if (it.id == updated.id) updated else it
-                        }
+                        expenses =
+                            trip.expenses
+                                .filterNot {
+                                    it.id == updated.id
+                                } + updated
                     )
                 )
-                editingCustomExpense = null
+                editingExpense = null
             }
         )
+    }
+}
+
+@Composable
+private fun SmartBudgetOverviewCard(
+    plannedIls: Double,
+    actualIls: Double,
+    remainingIls: Double
+) {
+    val progress = if (plannedIls <= 0) {
+        0f
+    } else {
+        (actualIls / plannedIls)
+            .toFloat()
+            .coerceIn(0f, 1.5f)
     }
 
-    if (addCategory) {
-        AddBudgetCategoryDialog(
-            existing = categories,
-            onDismiss = { addCategory = false },
-            onConfirm = { category ->
-                pendingCategory = category
-                selectedCategory = category
-                addCategory = false
-                addCustomExpense = true
+    SectionCard(
+        containerColor = SoftSun
+    ) {
+        Text(
+            "תמונת מצב",
+            style =
+                MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = Navy
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement =
+                Arrangement.spacedBy(8.dp)
+        ) {
+            SmartBudgetMetric(
+                title = "מתוכנן",
+                value =
+                    "₪${formatBudgetAmount(plannedIls)}",
+                modifier = Modifier.weight(1f)
+            )
+            SmartBudgetMetric(
+                title = "שולם",
+                value =
+                    "₪${formatBudgetAmount(actualIls)}",
+                modifier = Modifier.weight(1f)
+            )
+            SmartBudgetMetric(
+                title = "נותר",
+                value =
+                    "₪${formatBudgetAmount(remainingIls)}",
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        LinearProgressIndicator(
+            progress = {
+                progress.coerceAtMost(1f)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            color = if (actualIls > plannedIls) {
+                Coral
+            } else {
+                Color(0xFFE7A62D)
+            },
+            trackColor = CardWhite
+        )
+
+        if (
+            plannedIls > 0 &&
+            actualIls > plannedIls
+        ) {
+            Text(
+                "⚠️ חריגה של ₪${formatBudgetAmount(actualIls - plannedIls)}",
+                color = Coral,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun SmartBudgetMetric(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = CardWhite
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            horizontalAlignment =
+                Alignment.CenterHorizontally
+        ) {
+            Text(
+                title,
+                style =
+                    MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
+            Text(
+                value,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+        }
+    }
+}
+
+@Composable
+private fun SmartBudgetItemCard(
+    expense: Expense,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val planned = smartExpensePlanned(expense)
+    val actual = smartExpenseActual(expense)
+    val variance = actual - planned
+    val statusColor = when (
+        expense.paymentStatus
+    ) {
+        "שולם" -> Color(0xFF2E7D56)
+        "שולם חלקית" -> Color(0xFF9A6A00)
+        "בוטל" -> Coral
+        else -> Sky
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = CardWhite
+        ),
+        border = BorderStroke(
+            1.dp,
+            Color(0xFFE3E9F0)
+        ),
+        elevation =
+            CardDefaults.cardElevation(
+                defaultElevation = 2.dp
+            )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement =
+                Arrangement.spacedBy(9.dp)
+        ) {
+            Row(
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+                Text(
+                    budgetCategoryEmoji(
+                        smartBudgetCategory(
+                            expense.category
+                        )
+                    ),
+                    style =
+                        MaterialTheme.typography.titleLarge
+                )
+                Spacer(Modifier.width(9.dp))
+
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        expense.title,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    Text(
+                        "${smartBudgetCategory(expense.category)} · ${expense.date}",
+                        style =
+                            MaterialTheme.typography.labelSmall,
+                        color = TextSecondary
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = statusColor.copy(
+                        alpha = 0.12f
+                    )
+                ) {
+                    Text(
+                        expense.paymentStatus,
+                        modifier = Modifier.padding(
+                            horizontal = 8.dp,
+                            vertical = 5.dp
+                        ),
+                        color = statusColor,
+                        fontWeight = FontWeight.Bold,
+                        style =
+                            MaterialTheme.typography.labelSmall
+                    )
+                }
             }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+                SmartBudgetMetric(
+                    title = "מתוכנן",
+                    value =
+                        "${expense.currency} ${formatBudgetAmount(planned)}",
+                    modifier = Modifier.weight(1f)
+                )
+                SmartBudgetMetric(
+                    title = "בפועל",
+                    value =
+                        "${expense.currency} ${formatBudgetAmount(actual)}",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            if (
+                planned > 0 &&
+                actual > 0 &&
+                variance != 0.0
+            ) {
+                Text(
+                    if (variance > 0) {
+                        "חריגה: ${expense.currency} ${formatBudgetAmount(variance)}"
+                    } else {
+                        "חיסכון: ${expense.currency} ${formatBudgetAmount(-variance)}"
+                    },
+                    color = if (variance > 0) {
+                        Coral
+                    } else {
+                        Color(0xFF2E7D56)
+                    },
+                    fontWeight = FontWeight.Bold,
+                    style =
+                        MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Text(
+                "שער לשקל: ${expense.exchangeRateToIls} · ${expense.exchangeRateDate.ifBlank { "לא צוין" }}",
+                style =
+                    MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.End
+            ) {
+                TextButton(onClick = onEdit) {
+                    Text("עריכה")
+                }
+
+                if (
+                    expense.sourceType != "אוטומטי"
+                ) {
+                    IconButton(
+                        onClick = onDelete
+                    ) {
+                        SmallDeleteIcon(
+                            Modifier.size(27.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmartExpenseDialog(
+    existing: Expense?,
+    categories: List<String>,
+    defaultCurrency: String,
+    defaultDate: String,
+    onDismiss: () -> Unit,
+    onConfirm: (Expense) -> Unit
+) {
+    var title by remember(existing?.id) {
+        mutableStateOf(
+            existing?.title.orEmpty()
         )
     }
+    var plannedText by remember(existing?.id) {
+        mutableStateOf(
+            smartExpensePlanned(
+                existing ?: Expense(
+                    "",
+                    "",
+                    0.0,
+                    defaultCurrency,
+                    "",
+                    defaultDate
+                )
+            )
+                .takeIf { it > 0 }
+                ?.toString()
+                .orEmpty()
+        )
+    }
+    var actualText by remember(existing?.id) {
+        mutableStateOf(
+            smartExpenseActual(
+                existing ?: Expense(
+                    "",
+                    "",
+                    0.0,
+                    defaultCurrency,
+                    "",
+                    defaultDate
+                )
+            )
+                .takeIf { it > 0 }
+                ?.toString()
+                .orEmpty()
+        )
+    }
+    var currency by remember(existing?.id) {
+        mutableStateOf(
+            existing?.currency ?: defaultCurrency
+        )
+    }
+    var category by remember(existing?.id) {
+        mutableStateOf(
+            smartBudgetCategory(
+                existing?.category
+                    ?: categories.firstOrNull()
+                    ?: "שונות"
+            )
+        )
+    }
+    var date by remember(existing?.id) {
+        mutableStateOf(
+            existing?.date ?: defaultDate
+        )
+    }
+    var status by remember(existing?.id) {
+        mutableStateOf(
+            existing?.paymentStatus
+                ?: "מתוכנן"
+        )
+    }
+    var exchangeText by remember(existing?.id) {
+        mutableStateOf(
+            (existing?.exchangeRateToIls
+                ?: 1.0).toString()
+        )
+    }
+    var exchangeDate by remember(existing?.id) {
+        mutableStateOf(
+            existing?.exchangeRateDate
+                ?.ifBlank { defaultDate }
+                ?: defaultDate
+        )
+    }
+    var categoryMenu by remember {
+        mutableStateOf(false)
+    }
+    var currencyMenu by remember {
+        mutableStateOf(false)
+    }
+    var statusMenu by remember {
+        mutableStateOf(false)
+    }
+
+    val currencies = listOf(
+        defaultCurrency,
+        currency,
+        "ILS",
+        "EUR",
+        "USD",
+        "GBP",
+        "HUF"
+    ).filter { it.isNotBlank() }.distinct()
+
+    val statuses = listOf(
+        "מתוכנן",
+        "שולם",
+        "שולם חלקית",
+        "תשלום ביעד",
+        "בוטל"
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (existing == null) {
+                    "הוצאה חדשה"
+                } else {
+                    "עריכת סעיף תקציב"
+                }
+            )
+        },
+        text = {
+            LazyColumn(
+                verticalArrangement =
+                    Arrangement.spacedBy(9.dp)
+            ) {
+                item {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = {
+                            title = it
+                        },
+                        enabled =
+                            existing?.sourceType !=
+                                "אוטומטי",
+                        label = {
+                            Text("שם הסעיף")
+                        },
+                        modifier =
+                            Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    Row(
+                        horizontalArrangement =
+                            Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = plannedText,
+                            onValueChange = {
+                                plannedText =
+                                    it.filter {
+                                        char ->
+                                        char.isDigit() ||
+                                            char == '.'
+                                    }
+                            },
+                            label = {
+                                Text("מתוכנן")
+                            },
+                            modifier =
+                                Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = actualText,
+                            onValueChange = {
+                                actualText =
+                                    it.filter {
+                                        char ->
+                                        char.isDigit() ||
+                                            char == '.'
+                                    }
+                            },
+                            label = {
+                                Text("בפועל")
+                            },
+                            modifier =
+                                Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                item {
+                    Box(
+                        modifier =
+                            Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                categoryMenu = true
+                            },
+                            modifier =
+                                Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "קטגוריה: $category",
+                                modifier =
+                                    Modifier.weight(1f)
+                            )
+                            Text("⌄")
+                        }
+                        DropdownMenu(
+                            expanded = categoryMenu,
+                            onDismissRequest = {
+                                categoryMenu = false
+                            }
+                        ) {
+                            categories.forEach {
+                                option ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(option)
+                                    },
+                                    onClick = {
+                                        category = option
+                                        categoryMenu =
+                                            false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Box(
+                        modifier =
+                            Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                currencyMenu = true
+                            },
+                            modifier =
+                                Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "מטבע: $currency",
+                                modifier =
+                                    Modifier.weight(1f)
+                            )
+                            Text("⌄")
+                        }
+                        DropdownMenu(
+                            expanded = currencyMenu,
+                            onDismissRequest = {
+                                currencyMenu = false
+                            }
+                        ) {
+                            currencies.forEach {
+                                option ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(option)
+                                    },
+                                    onClick = {
+                                        currency = option
+                                        currencyMenu =
+                                            false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Box(
+                        modifier =
+                            Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                statusMenu = true
+                            },
+                            modifier =
+                                Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "סטטוס: $status",
+                                modifier =
+                                    Modifier.weight(1f)
+                            )
+                            Text("⌄")
+                        }
+                        DropdownMenu(
+                            expanded = statusMenu,
+                            onDismissRequest = {
+                                statusMenu = false
+                            }
+                        ) {
+                            statuses.forEach {
+                                option ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(option)
+                                    },
+                                    onClick = {
+                                        status = option
+                                        statusMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = date,
+                        onValueChange = {
+                            date = it
+                        },
+                        label = {
+                            Text("תאריך")
+                        },
+                        modifier =
+                            Modifier.fillMaxWidth()
+                    )
+                }
+
+                item {
+                    Row(
+                        horizontalArrangement =
+                            Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = exchangeText,
+                            onValueChange = {
+                                exchangeText =
+                                    it.filter {
+                                        char ->
+                                        char.isDigit() ||
+                                            char == '.'
+                                    }
+                            },
+                            label = {
+                                Text("שער לשקל")
+                            },
+                            modifier =
+                                Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = exchangeDate,
+                            onValueChange = {
+                                exchangeDate = it
+                            },
+                            label = {
+                                Text("תאריך שער")
+                            },
+                            modifier =
+                                Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled =
+                    title.isNotBlank() &&
+                        (
+                            plannedText
+                                .toDoubleOrNull()
+                                ?: 0.0
+                            ) >= 0 &&
+                        (
+                            actualText
+                                .toDoubleOrNull()
+                                ?: 0.0
+                            ) >= 0,
+                onClick = {
+                    val planned =
+                        plannedText.toDoubleOrNull()
+                            ?: 0.0
+                    val actual =
+                        actualText.toDoubleOrNull()
+                            ?: 0.0
+
+                    onConfirm(
+                        Expense(
+                            id = existing?.id
+                                ?: UUID.randomUUID()
+                                    .toString(),
+                            title = title.trim(),
+                            amount = if (
+                                actual > 0
+                            ) {
+                                actual
+                            } else {
+                                planned
+                            },
+                            currency = currency,
+                            category = category,
+                            date = date.ifBlank {
+                                defaultDate
+                            },
+                            plannedAmount = planned,
+                            actualAmount = actual,
+                            paymentStatus = status,
+                            sourceType =
+                                existing?.sourceType
+                                    ?: "ידני",
+                            sourceId =
+                                existing?.sourceId
+                                    .orEmpty(),
+                            exchangeRateToIls =
+                                exchangeText
+                                    .toDoubleOrNull()
+                                    ?.coerceAtLeast(
+                                        0.0
+                                    )
+                                    ?: 1.0,
+                            exchangeRateDate =
+                                exchangeDate,
+                            notes =
+                                existing?.notes.orEmpty()
+                        )
+                    )
+                }
+            ) {
+                Text("שמירה")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ביטול")
+            }
+        }
+    )
+}
+
+private fun smartExpensePlanned(
+    expense: Expense
+): Double {
+    return when {
+        expense.plannedAmount > 0 ->
+            expense.plannedAmount
+        expense.actualAmount <= 0 ->
+            expense.amount
+        else -> 0.0
+    }
+}
+
+private fun smartExpenseActual(
+    expense: Expense
+): Double {
+    return when {
+        expense.actualAmount > 0 ->
+            expense.actualAmount
+        expense.paymentStatus in setOf(
+            "שולם",
+            "שולם חלקית"
+        ) -> expense.amount
+        else -> 0.0
+    }
+}
+
+private fun smartBudgetCategory(
+    category: String
+): String = when (category) {
+    "תחבורה" -> "רכב והסעות"
+    "כללי" -> "שונות"
+    else -> category
 }
 
 data class BudgetCategorySummary(

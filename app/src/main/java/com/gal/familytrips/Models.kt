@@ -105,7 +105,15 @@ data class Expense(
     val amount: Double,
     val currency: String,
     val category: String,
-    val date: String
+    val date: String,
+    val plannedAmount: Double = 0.0,
+    val actualAmount: Double = 0.0,
+    val paymentStatus: String = "מתוכנן",
+    val sourceType: String = "ידני",
+    val sourceId: String = "",
+    val exchangeRateToIls: Double = 1.0,
+    val exchangeRateDate: String = "",
+    val notes: String = ""
 )
 
 @Serializable
