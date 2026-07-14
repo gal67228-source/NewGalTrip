@@ -158,11 +158,47 @@ data class Trip(
     val packingCategories: List<String> = emptyList(),
     val offlineMode: Boolean = false,
     val destinationStays: List<DestinationStay> = emptyList(),
-    val flights: List<Flight> = emptyList()
+    val flights: List<Flight> = emptyList(),
+    val ownerUserId: String = "",
+    val cloudEnabled: Boolean = false,
+    val cloudRevision: Long = 0L,
+    val lastSyncedAt: Long = 0L,
+    val updatedAt: Long = 0L,
+    val updatedBy: String = "",
+    val members: List<TripMember> = emptyList()
+)
+
+@Serializable
+data class TripMember(
+    val userId: String,
+    val displayName: String,
+    val email: String = "",
+    val role: String = "viewer",
+    val joinedAt: Long = 0L,
+    val lastSeenAt: Long = 0L
+)
+
+@Serializable
+data class CloudUserProfile(
+    val userId: String,
+    val displayName: String,
+    val email: String = "",
+    val photoUrl: String = "",
+    val provider: String = "local"
+)
+
+@Serializable
+data class SyncStatus(
+    val state: String = "local_only",
+    val pendingChanges: Int = 0,
+    val lastError: String = "",
+    val lastSyncedAt: Long = 0L
 )
 
 @Serializable
 data class AppState(
     val trips: List<Trip>,
-    val currentTripId: String
+    val currentTripId: String,
+    val currentUser: CloudUserProfile? = null,
+    val syncStatus: SyncStatus = SyncStatus()
 )

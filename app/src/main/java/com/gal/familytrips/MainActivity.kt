@@ -1507,6 +1507,69 @@ private fun TripsScreen(
         }
 
         item {
+            SectionCard(containerColor = SoftBlue) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "שיתוף משפחתי בענן",
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+                        Text(
+                            if (currentTrip.cloudEnabled) {
+                                "הטיול מחובר לענן"
+                            } else {
+                                "התשתית מוכנה · Firebase עדיין לא מחובר"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (currentTrip.cloudEnabled) {
+                            SoftMint
+                        } else {
+                            SoftSun
+                        }
+                    ) {
+                        Text(
+                            if (currentTrip.cloudEnabled) "מחובר" else "מקומי",
+                            modifier = Modifier.padding(
+                                horizontal = 9.dp,
+                                vertical = 5.dp
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            color = if (currentTrip.cloudEnabled) {
+                                Color(0xFF2E7D56)
+                            } else {
+                                Color(0xFF8F6500)
+                            }
+                        )
+                    }
+                }
+
+                currentTrip.members.take(3).forEach { member ->
+                    Text(
+                        "• ${member.displayName} · ${CloudFoundation.roleLabel(member.role)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+
+                Text(
+                    "השלב הבא: חיבור Firebase, כניסה עם Google וסנכרון בזמן אמת.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Sky
+                )
+            }
+        }
+
+        item {
             SectionCard(
                 containerColor = when {
                     healthScore >= 85 -> SoftMint
