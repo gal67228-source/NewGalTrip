@@ -20,8 +20,8 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 80
-        versionName '4.3.0-smart-home-dashboard'
+        versionCode 81
+        versionName '4.3.1-trip-manager-sharing'
 
         buildConfigField "String", "ROUTES_WORKER_URL",
             "\"${routesWorkerUrl.replace('\\', '\\\\').replace('\"', '\\\"')}\""

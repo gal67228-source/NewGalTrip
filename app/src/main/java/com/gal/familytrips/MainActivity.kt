@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
                             lifecycleScope.launch { store.save(it) }
                         },
                         onOpenUrl = ::openUrl,
-                        onShareTrip = { shareText(store.exportTrip(it)) },
+                        onShareTrip = { shareTripPackage(it) },
                         onImportTrip = { raw ->
                             runCatching { store.importTrip(raw) }.onSuccess { trip ->
                                 val imported = trip.copy(id = UUID.randomUUID().toString(), name = trip.name + " (מיובא)")
@@ -107,11 +107,33 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun shareText(text: String) {
-        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, text)
-        }, "שיתוף טיול"))
+    private fun shareTripPackage(trip: Trip) {
+        runCatching {
+            val uri = TripPackageManager.createPackage(
+                this,
+                trip
+            )
+
+            startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "application/zip"
+                        putExtra(
+                            Intent.EXTRA_STREAM,
+                            uri
+                        )
+                        putExtra(
+                            Intent.EXTRA_SUBJECT,
+                            trip.name
+                        )
+                        addFlags(
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    },
+                    "שיתוף הטיול"
+                )
+            )
+        }
     }
 }
 
@@ -1058,6 +1080,43 @@ private fun TripsScreen(
     var editingTrip by remember {
         mutableStateOf<Trip?>(null)
     }
+    var showTripManager by remember {
+        mutableStateOf(false)
+    }
+    var tripToDelete by remember {
+        mutableStateOf<Trip?>(null)
+    }
+    var importError by remember {
+        mutableStateOf<String?>(null)
+    }
+    val context = LocalContext.current
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                TripPackageManager.importPackage(
+                    context,
+                    uri
+                )
+            }.onSuccess { imported ->
+                val copy = imported.copy(
+                    id = UUID.randomUUID().toString(),
+                    name = imported.name + " (מיובא)"
+                )
+                onStateChange(
+                    state.copy(
+                        trips = state.trips + copy,
+                        currentTripId = copy.id
+                    )
+                )
+            }.onFailure {
+                importError =
+                    it.message ?: "הייבוא נכשל"
+            }
+        }
+    }
 
     val currentTrip = state.trips.firstOrNull {
         it.id == state.currentTripId
@@ -1245,6 +1304,23 @@ private fun TripsScreen(
                 start = Lavender,
                 end = Navy
             )
+        }
+
+        item {
+            OutlinedButton(
+                onClick = {
+                    showTripManager = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(
+                    "החלפת טיול",
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.Bold
+                )
+                Text("⌄")
+            }
         }
 
         item {
@@ -1574,7 +1650,7 @@ private fun TripsScreen(
                     Arrangement.spacedBy(8.dp)
             ) {
                 SoftActionButton(
-                    text = "עריכת טיול",
+                    text = "עריכה",
                     emoji = "✏️",
                     onClick = {
                         editingTrip = currentTrip
@@ -1584,13 +1660,23 @@ private fun TripsScreen(
                     modifier = Modifier.weight(1f)
                 )
                 SoftActionButton(
-                    text = "שיתוף",
+                    text = "שיתוף קובץ",
                     emoji = "📤",
                     onClick = {
                         onShareTrip(currentTrip)
                     },
                     container = SoftBlue,
                     contentColor = Sky,
+                    modifier = Modifier.weight(1f)
+                )
+                SoftActionButton(
+                    text = "ניהול",
+                    emoji = "⚙️",
+                    onClick = {
+                        showTripManager = true
+                    },
+                    container = SoftLavender,
+                    contentColor = Navy,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1664,10 +1750,15 @@ private fun TripsScreen(
 
         item {
             SoftActionButton(
-                text = "ייבוא טיול מטקסט JSON",
+                text = "ייבוא קובץ .gtrip",
                 emoji = "📥",
                 onClick = {
-                    importText = ""
+                    importLauncher.launch(
+                        arrayOf(
+                            "application/zip",
+                            "application/octet-stream"
+                        )
+                    )
                 },
                 container = SoftAqua,
                 contentColor = Aqua,
@@ -1686,6 +1777,267 @@ private fun TripsScreen(
             onConfirm = {
                 onImportTrip(it)
                 importText = null
+            }
+        )
+    }
+
+
+    if (showTripManager) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showTripManager = false
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = 16.dp,
+                        vertical = 8.dp
+                    ),
+                verticalArrangement =
+                    Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    "הטיולים שלי",
+                    style =
+                        MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+
+                state.trips.forEach { tripItem ->
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (
+                            tripItem.id ==
+                                state.currentTripId
+                        ) {
+                            SoftBlue
+                        } else {
+                            CardWhite
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            Color(0xFFE3E9F0)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement =
+                                Arrangement.spacedBy(7.dp)
+                        ) {
+                            Row(
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                verticalAlignment =
+                                    Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier =
+                                        Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        tripItem.name,
+                                        fontWeight =
+                                            FontWeight.Bold,
+                                        color = Navy
+                                    )
+                                    Text(
+                                        "${tripItem.destination} · ${tripItem.startDate}–${tripItem.endDate}",
+                                        style =
+                                            MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary
+                                    )
+                                }
+
+                                if (
+                                    tripItem.id ==
+                                        state.currentTripId
+                                ) {
+                                    Text(
+                                        "✓ נבחר",
+                                        color = Sky,
+                                        fontWeight =
+                                            FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                horizontalArrangement =
+                                    Arrangement.spacedBy(6.dp)
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        onStateChange(
+                                            state.copy(
+                                                currentTripId =
+                                                    tripItem.id
+                                            )
+                                        )
+                                        showTripManager = false
+                                    }
+                                ) {
+                                    Text("מעבר")
+                                }
+
+                                TextButton(
+                                    onClick = {
+                                        editingTrip = tripItem
+                                        showTripManager = false
+                                    }
+                                ) {
+                                    Text("עריכה")
+                                }
+
+                                TextButton(
+                                    onClick = {
+                                        val duplicate =
+                                            tripItem.copy(
+                                                id = UUID
+                                                    .randomUUID()
+                                                    .toString(),
+                                                name =
+                                                    tripItem.name +
+                                                        " – עותק"
+                                            )
+                                        onStateChange(
+                                            state.copy(
+                                                trips =
+                                                    state.trips +
+                                                        duplicate,
+                                                currentTripId =
+                                                    duplicate.id
+                                            )
+                                        )
+                                        showTripManager = false
+                                    }
+                                ) {
+                                    Text("שכפול")
+                                }
+
+                                TextButton(
+                                    onClick = {
+                                        onShareTrip(tripItem)
+                                    }
+                                ) {
+                                    Text("שיתוף")
+                                }
+                            }
+
+                            TextButton(
+                                enabled = state.trips.size > 1,
+                                onClick = {
+                                    tripToDelete = tripItem
+                                    showTripManager = false
+                                }
+                            ) {
+                                Text(
+                                    if (state.trips.size > 1) {
+                                        "מחיקת הטיול"
+                                    } else {
+                                        "לא ניתן למחוק את הטיול האחרון"
+                                    },
+                                    color = if (
+                                        state.trips.size > 1
+                                    ) {
+                                        Coral
+                                    } else {
+                                        TextSecondary
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+            }
+        }
+    }
+
+    tripToDelete?.let { deleteTrip ->
+        AlertDialog(
+            onDismissRequest = {
+                tripToDelete = null
+            },
+            title = {
+                Text("מחיקת טיול")
+            },
+            text = {
+                Text(
+                    "למחוק את \"${deleteTrip.name}\"? " +
+                        "המסלול, ההוצאות, המסמכים " +
+                        "והציוד יימחקו מהמכשיר."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val remaining =
+                            state.trips.filterNot {
+                                it.id == deleteTrip.id
+                            }
+
+                        if (remaining.isNotEmpty()) {
+                            onStateChange(
+                                state.copy(
+                                    trips = remaining,
+                                    currentTripId =
+                                        if (
+                                            state.currentTripId ==
+                                                deleteTrip.id
+                                        ) {
+                                            remaining.first().id
+                                        } else {
+                                            state.currentTripId
+                                        }
+                                )
+                            )
+                        }
+                        tripToDelete = null
+                    }
+                ) {
+                    Text(
+                        "מחיקה",
+                        color = Coral
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        tripToDelete = null
+                    }
+                ) {
+                    Text("ביטול")
+                }
+            }
+        )
+    }
+
+    importError?.let { message ->
+        AlertDialog(
+            onDismissRequest = {
+                importError = null
+            },
+            title = {
+                Text("הייבוא נכשל")
+            },
+            text = {
+                Text(message)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        importError = null
+                    }
+                ) {
+                    Text("אישור")
+                }
             }
         )
     }
