@@ -83,9 +83,30 @@ class MainActivity : ComponentActivity() {
                 state?.let { loaded ->
                     GalTripsApp(
                         state = loaded,
-                        onStateChange = {
-                            state = it
-                            lifecycleScope.launch { store.save(it) }
+                        onStateChange = { next ->
+                            state = next
+                            lifecycleScope.launch {
+                                store.save(next)
+                                val profile = next.currentUser
+                                val changedTrip = next.trips.firstOrNull {
+                                    it.id == next.currentTripId
+                                }
+                                if (
+                                    profile != null &&
+                                    changedTrip?.cloudEnabled == true
+                                ) {
+                                    runCatching {
+                                        cloudManager.uploadTrip(
+                                            changedTrip,
+                                            profile
+                                        )
+                                    }.onSuccess { synced ->
+                                        val syncedState = next.replaceTrip(synced)
+                                        state = syncedState
+                                        store.save(syncedState)
+                                    }
+                                }
+                            }
                         },
                         onOpenUrl = ::openUrl,
                         onShareTrip = { shareTripPackage(it) },
@@ -1110,6 +1131,10 @@ private fun TripsScreen(
     var cloudBusy by remember {
         mutableStateOf(false)
     }
+    var showFamilyDialog by remember { mutableStateOf(false) }
+    var showJoinDialog by remember { mutableStateOf(false) }
+    var inviteCode by remember { mutableStateOf("") }
+    var joinCode by remember { mutableStateOf("") }
     val cloudScope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -1786,6 +1811,22 @@ private fun TripsScreen(
                     }
                 }
 
+                if (state.currentUser != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showFamilyDialog = true },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("בני משפחה") }
+                        OutlinedButton(
+                            onClick = { showJoinDialog = true },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("הצטרפות בקוד") }
+                    }
+                }
+
                 cloudMessage?.let {
                     Text(
                         it,
@@ -2029,6 +2070,121 @@ private fun TripsScreen(
         )
     }
 
+
+    if (showFamilyDialog) {
+        AlertDialog(
+            onDismissRequest = { showFamilyDialog = false },
+            title = { Text("בני משפחה") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (currentTrip.members.isEmpty()) {
+                        Text("עדיין אין חברים נוספים בטיול")
+                    } else {
+                        currentTrip.members.forEach { member ->
+                            Text("${member.displayName} · ${CloudFoundation.roleLabel(member.role)}")
+                        }
+                    }
+                    if (inviteCode.isNotBlank()) {
+                        SectionCard(containerColor = SoftMint) {
+                            Text("קוד ההזמנה", fontWeight = FontWeight.Bold)
+                            Text(
+                                inviteCode,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                            Text("הקוד תקף לשבעה ימים")
+                        }
+                    }
+                    if (
+                        currentTrip.cloudEnabled &&
+                        currentTrip.ownerUserId == state.currentUser?.userId
+                    ) {
+                        Button(
+                            enabled = !cloudBusy,
+                            onClick = {
+                                val profile = state.currentUser ?: return@Button
+                                cloudBusy = true
+                                cloudScope.launch {
+                                    runCatching {
+                                        cloudManager.createInvite(
+                                            currentTrip,
+                                            profile,
+                                            "editor"
+                                        )
+                                    }.onSuccess {
+                                        inviteCode = it.code
+                                    }.onFailure {
+                                        cloudMessage = it.localizedMessage
+                                    }
+                                    cloudBusy = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("יצירת קוד לעורך") }
+                    } else if (!currentTrip.cloudEnabled) {
+                        Text("יש להפעיל סנכרון לטיול לפני הזמנת חברים")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showFamilyDialog = false }) {
+                    Text("סגירה")
+                }
+            }
+        )
+    }
+
+    if (showJoinDialog) {
+        AlertDialog(
+            onDismissRequest = { showJoinDialog = false },
+            title = { Text("הצטרפות לטיול") },
+            text = {
+                OutlinedTextField(
+                    value = joinCode,
+                    onValueChange = { joinCode = it.uppercase().take(6) },
+                    label = { Text("קוד הזמנה") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = joinCode.length == 6 && !cloudBusy,
+                    onClick = {
+                        val profile = state.currentUser ?: return@TextButton
+                        cloudBusy = true
+                        cloudScope.launch {
+                            runCatching {
+                                cloudManager.joinTrip(joinCode, profile)
+                            }.onSuccess { joined ->
+                                val existing = state.trips.any { it.id == joined.id }
+                                onStateChange(
+                                    if (existing) {
+                                        state.replaceTrip(joined).copy(currentTripId = joined.id)
+                                    } else {
+                                        state.copy(
+                                            trips = state.trips + joined,
+                                            currentTripId = joined.id
+                                        )
+                                    }
+                                )
+                                showJoinDialog = false
+                                joinCode = ""
+                                cloudMessage = "הצטרפת לטיול ${joined.name}"
+                            }.onFailure {
+                                cloudMessage = it.localizedMessage ?: "ההצטרפות נכשלה"
+                            }
+                            cloudBusy = false
+                        }
+                    }
+                ) { Text("הצטרפות") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showJoinDialog = false }) { Text("ביטול") }
+            }
+        )
+    }
 
     if (showTripManager) {
         ModalBottomSheet(

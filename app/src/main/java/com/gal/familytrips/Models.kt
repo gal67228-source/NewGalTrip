@@ -188,6 +188,17 @@ data class CloudUserProfile(
 )
 
 @Serializable
+data class TripInvite(
+    val code: String,
+    val tripId: String,
+    val tripName: String,
+    val role: String = "editor",
+    val createdBy: String,
+    val createdAt: Long,
+    val expiresAt: Long
+)
+
+@Serializable
 data class SyncStatus(
     val state: String = "local_only",
     val pendingChanges: Int = 0,

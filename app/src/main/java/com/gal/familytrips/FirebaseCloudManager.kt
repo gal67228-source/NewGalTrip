@@ -10,6 +10,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.FieldValue
 import kotlinx.coroutines.tasks.await
 import kotlinx.serialization.json.Json
 
@@ -187,4 +188,116 @@ class FirebaseCloudManager(
                     }
             }
     }
+
+    suspend fun createInvite(
+        trip: Trip,
+        profile: CloudUserProfile,
+        role: String = "editor"
+    ): TripInvite {
+        if (trip.ownerUserId != profile.userId) {
+            error("רק בעל הטיול יכול להזמין חברים")
+        }
+
+        val code = (1..6)
+            .map { "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".random() }
+            .joinToString("")
+        val now = System.currentTimeMillis()
+        val invite = TripInvite(
+            code = code,
+            tripId = trip.id,
+            tripName = trip.name,
+            role = role,
+            createdBy = profile.userId,
+            createdAt = now,
+            expiresAt = now + 7L * 24 * 60 * 60 * 1000
+        )
+
+        firestore.collection("invites")
+            .document(code)
+            .set(
+                mapOf(
+                    "code" to code,
+                    "tripId" to trip.id,
+                    "tripName" to trip.name,
+                    "role" to role,
+                    "createdBy" to profile.userId,
+                    "createdAt" to now,
+                    "expiresAt" to invite.expiresAt
+                )
+            ).await()
+
+        firestore.collection("trips")
+            .document(trip.id)
+            .update("inviteCodes", FieldValue.arrayUnion(code))
+            .await()
+
+        return invite
+    }
+
+    suspend fun joinTrip(
+        code: String,
+        profile: CloudUserProfile
+    ): Trip {
+        val cleanCode = code.trim().uppercase()
+        val inviteSnapshot = firestore.collection("invites")
+            .document(cleanCode)
+            .get().await()
+
+        if (!inviteSnapshot.exists()) {
+            error("קוד ההזמנה אינו קיים")
+        }
+
+        val expiresAt = inviteSnapshot.getLong("expiresAt") ?: 0L
+        if (expiresAt < System.currentTimeMillis()) {
+            error("תוקף קוד ההזמנה פג")
+        }
+
+        val tripId = inviteSnapshot.getString("tripId")
+            ?: error("קוד ההזמנה אינו תקין")
+        val role = inviteSnapshot.getString("role") ?: "editor"
+        val tripRef = firestore.collection("trips").document(tripId)
+        val snapshot = tripRef.get().await()
+        val raw = snapshot.getString("tripJson")
+            ?: error("הטיול המשותף לא נמצא")
+        val existing = json.decodeFromString(Trip.serializer(), raw)
+
+        val member = TripMember(
+            userId = profile.userId,
+            displayName = profile.displayName,
+            email = profile.email,
+            role = role,
+            joinedAt = System.currentTimeMillis(),
+            lastSeenAt = System.currentTimeMillis()
+        )
+        val updated = existing.copy(
+            cloudEnabled = true,
+            members = existing.members
+                .filterNot { it.userId == profile.userId } + member,
+            cloudRevision = existing.cloudRevision + 1,
+            updatedAt = System.currentTimeMillis(),
+            updatedBy = profile.userId,
+            lastSyncedAt = System.currentTimeMillis()
+        )
+        val memberIds = updated.members.map { it.userId }
+            .plus(updated.ownerUserId).filter { it.isNotBlank() }.distinct()
+        val editorIds = updated.members.filter {
+            it.role == "owner" || it.role == "editor"
+        }.map { it.userId }.plus(updated.ownerUserId)
+            .filter { it.isNotBlank() }.distinct()
+
+        tripRef.update(
+            mapOf(
+                "tripJson" to json.encodeToString(Trip.serializer(), updated),
+                "memberIds" to memberIds,
+                "editorIds" to editorIds,
+                "updatedAt" to updated.updatedAt,
+                "updatedBy" to profile.userId,
+                "cloudRevision" to updated.cloudRevision,
+                "lastJoinCode" to cleanCode
+            )
+        ).await()
+
+        return updated
+    }
+
 }
