@@ -72,31 +72,29 @@ jobs:
       - name: Show Firebase SHA fingerprints
         shell: bash
         run: |
-          set -e
           KEYSTORE="app/debug.keystore"
 
           echo "============================================"
           echo "FIREBASE DEBUG SIGNING FINGERPRINTS"
           echo "============================================"
 
-          keytool -list -v \
-            -keystore "$KEYSTORE" \
-            -alias androiddebugkey \
-            -storepass android \
-            -keypass android | grep -E "SHA1:|SHA256:"
-
-          echo "============================================"
-          echo "These fingerprints stay fixed between builds"
-          echo "============================================"
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "::error::Missing stable debug keystore: $KEYSTORE"
+            exit 1
+          fi
 
           keytool -list -v \
             -keystore "$KEYSTORE" \
             -alias androiddebugkey \
             -storepass android \
-            -keypass android | grep -E "SHA1:|SHA256:"
+            -keypass android > "$RUNNER_TEMP/keytool-output.txt"
+
+          cat "$RUNNER_TEMP/keytool-output.txt"
 
           echo "============================================"
-          echo "Copy both values into Firebase Project Settings"
+          echo "Expected stable fingerprints"
+          echo "SHA1: 85:01:09:D8:12:D6:2C:B2:B1:0D:FA:A5:C8:BF:20:81:A3:29:0B:1D"
+          echo "SHA256: D9:D9:A8:6F:16:29:5C:16:95:47:FB:B8:64:A2:BD:94:AF:6F:0E:F7:2A:71:3C:BD:22:63:2B:EA:E2:4E:D5:64"
           echo "============================================"
 
       - name: Build APK
@@ -118,7 +116,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gal-Family-Trips-V8-6-2-2-Final-Google-Config-APK
+          name: Gal-Family-Trips-V8-6-2-3-SHA-Workflow-Fix-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
