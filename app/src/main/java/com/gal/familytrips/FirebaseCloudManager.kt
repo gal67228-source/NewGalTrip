@@ -21,6 +21,8 @@ class FirebaseCloudManager(
 ) {
     private val v9Repository =
         V9CloudRepository()
+    private val diffSyncEngine =
+        TripDiffSyncEngine(v9Repository)
 
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
@@ -139,6 +141,16 @@ class FirebaseCloudManager(
         profile: CloudUserProfile
     ): Trip = v9Repository.migrateTrip(
         trip,
+        profile
+    )
+
+    suspend fun syncTripDiff(
+        old: Trip,
+        new: Trip,
+        profile: CloudUserProfile
+    ): Trip = diffSyncEngine.sync(
+        old,
+        new,
         profile
     )
 

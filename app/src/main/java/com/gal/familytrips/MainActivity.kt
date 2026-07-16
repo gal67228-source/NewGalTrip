@@ -61,11 +61,34 @@ import java.util.UUID
 class MainActivity : ComponentActivity() {
     private lateinit var store: TripStore
     private lateinit var cloudManager: FirebaseCloudManager
+    private var diffSyncCoordinator:
+        DiffSyncCoordinator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = TripStore(this)
         cloudManager = FirebaseCloudManager(this)
+        diffSyncCoordinator =
+            DiffSyncCoordinator(
+                scope = lifecycleScope,
+                syncEngine =
+                    TripDiffSyncEngine(
+                        V9CloudRepository()
+                    ),
+                onSynced = {
+                    synced ->
+                    val current =
+                        store.load()
+                    store.save(
+                        current.replaceTrip(
+                            synced
+                        )
+                    )
+                },
+                onError = {
+                    // Local data remains safe.
+                }
+            )
 
         setContent {
             GalTripsTheme {
@@ -84,28 +107,40 @@ class MainActivity : ComponentActivity() {
                     GalTripsApp(
                         state = loaded,
                         onStateChange = { next ->
+                            val previous = state
                             state = next
+
                             lifecycleScope.launch {
                                 store.save(next)
-                                val profile = next.currentUser
-                                val changedTrip = next.trips.firstOrNull {
-                                    it.id == next.currentTripId
+                            }
+
+                            val profile =
+                                next.currentUser
+                            val oldTrip = previous
+                                ?.trips
+                                ?.firstOrNull {
+                                    it.id ==
+                                        next.currentTripId
                                 }
-                                if (
-                                    profile != null &&
-                                    changedTrip?.cloudEnabled == true
-                                ) {
-                                    runCatching {
-                                        cloudManager.uploadTrip(
-                                            changedTrip,
-                                            profile
-                                        )
-                                    }.onSuccess { synced ->
-                                        val syncedState = next.replaceTrip(synced)
-                                        state = syncedState
-                                        store.save(syncedState)
-                                    }
+                            val newTrip = next.trips
+                                .firstOrNull {
+                                    it.id ==
+                                        next.currentTripId
                                 }
+
+                            if (
+                                profile != null &&
+                                oldTrip != null &&
+                                newTrip != null &&
+                                newTrip.cloudEnabled &&
+                                oldTrip != newTrip
+                            ) {
+                                diffSyncCoordinator
+                                    ?.enqueue(
+                                        oldTrip,
+                                        newTrip,
+                                        profile
+                                    )
                             }
                         },
                         onOpenUrl = ::openUrl,

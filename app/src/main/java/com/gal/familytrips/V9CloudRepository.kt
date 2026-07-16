@@ -324,6 +324,107 @@ class V9CloudRepository(
         }
     }
 
+    suspend fun updateTripMetadata(
+        old: Trip,
+        new: Trip,
+        userId: String
+    ) {
+        val changes = linkedMapOf<String, Any>()
+
+        fun changed(
+            key: String,
+            before: Any?,
+            after: Any?
+        ) {
+            if (before != after) {
+                changes[key] = after ?: ""
+            }
+        }
+
+        changed("name", old.name, new.name)
+        changed(
+            "destination",
+            old.destination,
+            new.destination
+        )
+        changed(
+            "destinationStops",
+            old.destinationStops,
+            new.destinationStops
+        )
+        changed(
+            "startDate",
+            old.startDate,
+            new.startDate
+        )
+        changed(
+            "endDate",
+            old.endDate,
+            new.endDate
+        )
+        changed(
+            "packingCategories",
+            old.packingCategories,
+            new.packingCategories
+        )
+        changed(
+            "offlineMode",
+            old.offlineMode,
+            new.offlineMode
+        )
+
+        if (changes.isEmpty()) return
+
+        changes["updatedAt"] =
+            System.currentTimeMillis()
+        changes["updatedBy"] = userId
+        changes["cloudRevision"] =
+            com.google.firebase.firestore
+                .FieldValue.increment(1)
+
+        firestore.collection("trips")
+            .document(new.id)
+            .set(changes, SetOptions.merge())
+            .await()
+    }
+
+    suspend fun <T> upsertEntity(
+        tripId: String,
+        collection: String,
+        entityId: String,
+        entity: T,
+        serializer: KSerializer<T>,
+        userId: String,
+        metadata: Map<String, Any> =
+            emptyMap()
+    ) {
+        require(
+            collection in ALLOWED_COLLECTIONS
+        )
+
+        val values = mutableMapOf<String, Any>(
+            "payload" to json.encodeToString(
+                serializer,
+                entity
+            ),
+            "updatedAt" to
+                System.currentTimeMillis(),
+            "updatedBy" to userId,
+            "revision" to
+                com.google.firebase.firestore
+                    .FieldValue.increment(1)
+        )
+        values.putAll(metadata)
+
+        firestore.collection("trips")
+            .document(tripId)
+            .collection(collection)
+            .document(entityId)
+            .set(values, SetOptions.merge())
+            .await()
+    }
+
+
     companion object {
         private val ALLOWED_COLLECTIONS =
             setOf(
