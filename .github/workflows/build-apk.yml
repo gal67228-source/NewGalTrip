@@ -71,43 +71,22 @@ jobs:
 
       - name: Restore stable debug keystore
         shell: bash
+        env:
+          DEBUG_KEYSTORE_BASE64: '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'
         run: |
+          set -e
           mkdir -p app
-          cat > "$RUNNER_TEMP/debug-keystore.b64" <<'KEYSTORE_EOF'
-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
-KEYSTORE_EOF
-          base64 --decode "$RUNNER_TEMP/debug-keystore.b64" > app/debug.keystore
+          printf '%s' "$DEBUG_KEYSTORE_BASE64" | base64 --decode > app/debug.keystore
           chmod 600 app/debug.keystore
           test -s app/debug.keystore
-          echo "Stable debug keystore restored"
 
       - name: Show Firebase SHA fingerprints
         shell: bash
         run: |
-          KEYSTORE="app/debug.keystore"
-
-          echo "============================================"
+          set -e
           echo "FIREBASE DEBUG SIGNING FINGERPRINTS"
-          echo "============================================"
+          keytool -list -v             -keystore app/debug.keystore             -alias androiddebugkey             -storepass android             -keypass android
 
-          if [ ! -f "$KEYSTORE" ]; then
-            echo "::error::Missing stable debug keystore: $KEYSTORE"
-            exit 1
-          fi
-
-          keytool -list -v \
-            -keystore "$KEYSTORE" \
-            -alias androiddebugkey \
-            -storepass android \
-            -keypass android > "$RUNNER_TEMP/keytool-output.txt"
-
-          cat "$RUNNER_TEMP/keytool-output.txt"
-
-          echo "============================================"
-          echo "Expected stable fingerprints"
-          echo "SHA1: 85:01:09:D8:12:D6:2C:B2:B1:0D:FA:A5:C8:BF:20:81:A3:29:0B:1D"
-          echo "SHA256: D9:D9:A8:6F:16:29:5C:16:95:47:FB:B8:64:A2:BD:94:AF:6F:0E:F7:2A:71:3C:BD:22:63:2B:EA:E2:4E:D5:64"
-          echo "============================================"
 
       - name: Build APK
         shell: bash
@@ -128,7 +107,7 @@ KEYSTORE_EOF
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gal-Family-Trips-V8-6-2-4-Embedded-Keystore-APK
+          name: Gal-Family-Trips-V8-6-2-5-YAML-Stable-Keystore-Fix-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
