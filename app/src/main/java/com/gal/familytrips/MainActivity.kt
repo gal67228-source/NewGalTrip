@@ -25,6 +25,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.grid.items
@@ -41,6 +42,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.semantics
@@ -301,50 +303,183 @@ private fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(SoftBlue)
-            .padding(24.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(26.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = CardWhite
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFFE7F2FF),
+                        Color(0xFFF7FAFD),
+                        Color.White
+                    )
+                )
             )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    horizontal = 28.dp,
+                    vertical = 32.dp
+                ),
+            horizontalAlignment =
+                Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier.padding(26.dp),
-                horizontalAlignment =
-                    Alignment.CenterHorizontally,
-                verticalArrangement =
-                    Arrangement.spacedBy(16.dp)
+            Spacer(Modifier.weight(0.65f))
+
+            Surface(
+                modifier = Modifier.size(94.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = Navy,
+                shadowElevation = 10.dp
             ) {
-                Text("🌍", style =
-                    MaterialTheme.typography.displaySmall)
-                Text(
-                    "Gal Family Trips",
-                    style =
-                        MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy
-                )
-                Text(
-                    "התחבר כדי לטעון את הטיולים שלך ולסנכרן אותם עם המשפחה.",
-                    color = TextSecondary
-                )
-                Button(
-                    onClick = onSignIn,
-                    enabled = !loading,
-                    modifier = Modifier.fillMaxWidth()
+                Box(
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("G", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(10.dp))
-                    Text("התחברות עם Google")
-                }
-                error?.let {
-                    Text(it, color = Coral)
+                    Icon(
+                        Icons.Default.Public,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(48.dp)
+                    )
                 }
             }
+
+            Spacer(Modifier.height(22.dp))
+
+            Text(
+                "Gal Family Trips",
+                style =
+                    MaterialTheme.typography
+                        .headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                "כל הטיולים, התכנונים והשינויים המשפחתיים במקום אחד",
+                textAlign = TextAlign.Center,
+                color = TextSecondary,
+                style =
+                    MaterialTheme.typography.bodyLarge
+            )
+
+            Spacer(Modifier.height(34.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = 6.dp
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(22.dp),
+                    verticalArrangement =
+                        Arrangement.spacedBy(18.dp)
+                ) {
+                    Row(
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFFF1F5F9)
+                        ) {
+                            Icon(
+                                Icons.Default.CloudSync,
+                                contentDescription = null,
+                                tint = Sky,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                "כניסה מאובטחת",
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                            Text(
+                                "הנתונים נטענים לפי חשבון Google שלך",
+                                color = TextSecondary,
+                                style =
+                                    MaterialTheme.typography
+                                        .bodySmall
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = onSignIn,
+                        enabled = !loading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Navy,
+                            disabledContainerColor =
+                                Color(0xFFF3F4F6)
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            Color(0xFFD8DEE8)
+                        )
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text(
+                                "G",
+                                color = Color(0xFF4285F4),
+                                fontWeight = FontWeight.Bold,
+                                style =
+                                    MaterialTheme.typography
+                                        .titleMedium
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "המשך עם Google",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    error?.let {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFFFF1F1)
+                        ) {
+                            Text(
+                                it,
+                                modifier = Modifier.padding(12.dp),
+                                color = Coral,
+                                style =
+                                    MaterialTheme.typography
+                                        .bodySmall
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            Text(
+                "הכניסה מאפשרת גיבוי, סנכרון ושיתוף משפחתי",
+                textAlign = TextAlign.Center,
+                color = TextSecondary,
+                style =
+                    MaterialTheme.typography.labelMedium
+            )
         }
     }
 }
@@ -482,6 +617,40 @@ private fun SmartDashboardScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment =
+            Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                title,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+            Text(
+                subtitle,
+                style =
+                    MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
     }
 }
 
@@ -875,13 +1044,13 @@ fun GalTripsApp(
     ) { padding ->
         key(trip.id, tab) {
             when (tab) {
-                0 -> SmartDashboardScreen(
-                    state = state,
-                    onStateChange = onStateChange,
-                    onCreateTrip = {
-                        showAddTrip = true
-                    },
-                    modifier = Modifier.padding(padding)
+                0 -> TripsScreen(
+                    state,
+                    onStateChange,
+                    onShareTrip,
+                    cloudManager,
+                    onImportTrip,
+                    Modifier.padding(padding)
                 )
 
                 1 -> TodayScreen(
@@ -1033,39 +1202,62 @@ fun GalTripsApp(
             onDismissRequest = {
                 showAccountDialog = false
             },
-            title = { Text("חשבון Google") },
+            icon = {
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFFF1F5F9)
+                ) {
+                    Text(
+                        "G",
+                        modifier = Modifier.padding(
+                            horizontal = 14.dp,
+                            vertical = 9.dp
+                        ),
+                        color = Color(0xFF4285F4),
+                        fontWeight = FontWeight.Bold,
+                        style =
+                            MaterialTheme.typography
+                                .titleLarge
+                    )
+                }
+            },
+            title = {
+                Text("חשבון Google")
+            },
             text = {
                 Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment =
+                        Alignment.CenterHorizontally,
                     verticalArrangement =
-                        Arrangement.spacedBy(8.dp)
+                        Arrangement.spacedBy(7.dp)
                 ) {
                     Text(
                         state.currentUser?.displayName
-                            ?: "משתמש"
+                            ?: "משתמש",
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
                     )
                     Text(
                         state.currentUser?.email.orEmpty(),
                         color = TextSecondary
                     )
-                    Text("${state.trips.size} טיולים בחשבון")
+                    Text(
+                        "${state.trips.size} טיולים מחוברים לחשבון",
+                        style =
+                            MaterialTheme.typography
+                                .bodySmall,
+                        color = TextSecondary
+                    )
                 }
             },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
                         showAccountDialog = false
-                        onReloadCloud()
-                    }
-                ) { Text("רענון מהענן") }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showAccountDialog = false
-                        onSignOut()
                     }
                 ) {
-                    Text("התנתקות", color = Coral)
+                    Text("סגירה")
                 }
             }
         )
@@ -1076,28 +1268,127 @@ fun GalTripsApp(
             onDismissRequest = {
                 showSettingsDialog = false
             },
-            title = { Text("הגדרות") },
+            title = {
+                Text("הגדרות")
+            },
             text = {
                 Column(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement =
-                        Arrangement.spacedBy(12.dp)
+                        Arrangement.spacedBy(16.dp)
                 ) {
-                    SettingsInfoRow("סנכרון אוטומטי", "פעיל")
-                    SettingsInfoRow("שמירה אופליין", "פעילה")
-                    SettingsInfoRow("מטבע", "₪")
-                    SettingsInfoRow("יחידות מרחק", "ק״מ")
-                    SettingsInfoRow(
-                        "גרסה",
-                        BuildConfig.VERSION_NAME
+                    SettingSwitchRow(
+                        title = "סנכרון אוטומטי",
+                        subtitle =
+                            "שליחת שינויים לענן באופן אוטומטי",
+                        checked =
+                            state.automaticSync,
+                        onCheckedChange = {
+                            onStateChange(
+                                state.copy(
+                                    automaticSync = it
+                                )
+                            )
+                        }
+                    )
+
+                    HorizontalDivider()
+
+                    SettingSwitchRow(
+                        title = "התראות",
+                        subtitle =
+                            "עדכונים ושינויים בטיול משותף",
+                        checked =
+                            state.notificationsEnabled,
+                        onCheckedChange = {
+                            onStateChange(
+                                state.copy(
+                                    notificationsEnabled =
+                                        it
+                                )
+                            )
+                        }
+                    )
+
+                    HorizontalDivider()
+
+                    Text(
+                        "מטבע מועדף",
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    Row(
+                        horizontalArrangement =
+                            Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("₪", "$", "€").forEach {
+                            currency ->
+                            FilterChip(
+                                selected =
+                                    state.preferredCurrency ==
+                                        currency,
+                                onClick = {
+                                    onStateChange(
+                                        state.copy(
+                                            preferredCurrency =
+                                                currency
+                                        )
+                                    )
+                                },
+                                label = {
+                                    Text(currency)
+                                }
+                            )
+                        }
+                    }
+
+                    Text(
+                        "יחידות מרחק",
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    Row(
+                        horizontalArrangement =
+                            Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("ק״מ", "מייל").forEach {
+                            unit ->
+                            FilterChip(
+                                selected =
+                                    state.distanceUnit ==
+                                        unit,
+                                onClick = {
+                                    onStateChange(
+                                        state.copy(
+                                            distanceUnit =
+                                                unit
+                                        )
+                                    )
+                                },
+                                label = {
+                                    Text(unit)
+                                }
+                            )
+                        }
+                    }
+
+                    Text(
+                        "גרסה ${BuildConfig.VERSION_NAME}",
+                        color = TextSecondary,
+                        style =
+                            MaterialTheme.typography
+                                .labelSmall
                     )
                 }
             },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
                         showSettingsDialog = false
                     }
-                ) { Text("סגירה") }
+                ) {
+                    Text("שמירה וסגירה")
+                }
             }
         )
     }

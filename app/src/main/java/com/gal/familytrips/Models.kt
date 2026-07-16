@@ -216,5 +216,9 @@ data class AppState(
     val trips: List<Trip>,
     val currentTripId: String,
     val currentUser: CloudUserProfile? = null,
-    val syncStatus: SyncStatus = SyncStatus()
+    val syncStatus: SyncStatus = SyncStatus(),
+    val automaticSync: Boolean = true,
+    val notificationsEnabled: Boolean = true,
+    val preferredCurrency: String = "₪",
+    val distanceUnit: String = "ק״מ"
 )
