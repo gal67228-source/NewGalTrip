@@ -500,6 +500,7 @@ private fun SettingsInfoRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalTripsApp(
     state: AppState,
