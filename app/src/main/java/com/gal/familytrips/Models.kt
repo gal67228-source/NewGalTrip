@@ -165,7 +165,9 @@ data class Trip(
     val lastSyncedAt: Long = 0L,
     val updatedAt: Long = 0L,
     val updatedBy: String = "",
-    val members: List<TripMember> = emptyList()
+    val members: List<TripMember> = emptyList(),
+    val cloudSchemaVersion: Int = 1,
+    val v9MigratedAt: Long = 0L
 )
 
 @Serializable

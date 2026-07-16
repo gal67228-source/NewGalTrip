@@ -19,6 +19,9 @@ import kotlinx.serialization.json.Json
 class FirebaseCloudManager(
     private val activity: Activity
 ) {
+    private val v9Repository =
+        V9CloudRepository()
+
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
     private val credentialManager =
@@ -130,6 +133,14 @@ class FirebaseCloudManager(
     fun signOut() {
         auth.signOut()
     }
+
+    suspend fun migrateTripToV9(
+        trip: Trip,
+        profile: CloudUserProfile
+    ): Trip = v9Repository.migrateTrip(
+        trip,
+        profile
+    )
 
     suspend fun uploadTrip(
         trip: Trip,
