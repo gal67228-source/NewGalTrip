@@ -24,8 +24,12 @@ class FirebaseCloudManager(
     private val diffSyncEngine =
         TripDiffSyncEngine(v9Repository)
 
-    private val auth = FirebaseAuth.getInstance()
-    private val firestore = FirebaseFirestore.getInstance()
+    private val auth =
+        FirebaseAuth.getInstance()
+    private val firestore =
+        FirebaseFirestore.getInstance().also {
+            FirestoreCachePolicy.configure(it)
+        }
     private val credentialManager =
         CredentialManager.create(activity)
 
@@ -357,5 +361,37 @@ class FirebaseCloudManager(
 
         return updated
     }
+
+    fun listenActivitiesForDayV9(
+        tripId: String,
+        dayId: String,
+        onChange: (List<CloudActivity>) -> Unit,
+        onError: (Throwable) -> Unit
+    ): com.google.firebase.firestore
+        .ListenerRegistration =
+        v9Repository.listenActivitiesForDay(
+            tripId,
+            dayId,
+            onChange,
+            onError
+        )
+
+    fun <T> listenCollectionV9(
+        tripId: String,
+        collection: String,
+        serializer:
+            kotlinx.serialization.KSerializer<T>,
+        onChange: (List<T>) -> Unit,
+        onError: (Throwable) -> Unit
+    ): com.google.firebase.firestore
+        .ListenerRegistration =
+        v9Repository.listenCollection(
+            tripId,
+            collection,
+            serializer,
+            onChange,
+            onError
+        )
+
 
 }

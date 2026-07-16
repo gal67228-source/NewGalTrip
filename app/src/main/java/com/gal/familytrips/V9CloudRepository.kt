@@ -2,6 +2,7 @@ package com.gal.familytrips
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.tasks.await
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -422,6 +423,86 @@ class V9CloudRepository(
             .document(entityId)
             .set(values, SetOptions.merge())
             .await()
+    }
+
+
+    fun listenActivitiesForDay(
+        tripId: String,
+        dayId: String,
+        onChange: (List<CloudActivity>) -> Unit,
+        onError: (Throwable) -> Unit
+    ): ListenerRegistration {
+        return firestore.collection("trips")
+            .document(tripId)
+            .collection("activities")
+            .whereEqualTo("dayId", dayId)
+            .addSnapshotListener {
+                snapshot,
+                error ->
+
+                if (error != null) {
+                    onError(error)
+                    return@addSnapshotListener
+                }
+
+                val items = snapshot?.documents
+                    ?.mapNotNull { document ->
+                        document.getString("payload")
+                            ?.let { raw ->
+                                runCatching {
+                                    json.decodeFromString(
+                                        CloudActivity.serializer(),
+                                        raw
+                                    )
+                                }.getOrNull()
+                            }
+                    }
+                    ?.sortedBy { it.position }
+                    .orEmpty()
+
+                onChange(items)
+            }
+    }
+
+    fun <T> listenCollection(
+        tripId: String,
+        collection: String,
+        serializer: KSerializer<T>,
+        onChange: (List<T>) -> Unit,
+        onError: (Throwable) -> Unit
+    ): ListenerRegistration {
+        require(
+            collection in ALLOWED_COLLECTIONS
+        )
+
+        return firestore.collection("trips")
+            .document(tripId)
+            .collection(collection)
+            .addSnapshotListener {
+                snapshot,
+                error ->
+
+                if (error != null) {
+                    onError(error)
+                    return@addSnapshotListener
+                }
+
+                val items = snapshot?.documents
+                    ?.mapNotNull { document ->
+                        document.getString("payload")
+                            ?.let { raw ->
+                                runCatching {
+                                    json.decodeFromString(
+                                        serializer,
+                                        raw
+                                    )
+                                }.getOrNull()
+                            }
+                    }
+                    .orEmpty()
+
+                onChange(items)
+            }
     }
 
 

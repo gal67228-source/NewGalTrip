@@ -144,8 +144,17 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onOpenUrl = ::openUrl,
-                        onShareTrip = { shareTripPackage(it) },
+                        onShareTrip = {
+                            shareTripPackage(it)
+                        },
                         cloudManager = cloudManager,
+                        onRemoteStateChange = {
+                            remote ->
+                            state = remote
+                            lifecycleScope.launch {
+                                store.save(remote)
+                            }
+                        },
                         onImportTrip = { raw ->
                             runCatching { store.importTrip(raw) }.onSuccess { trip ->
                                 val imported = trip.copy(id = UUID.randomUUID().toString(), name = trip.name + " (מיובא)")
@@ -208,12 +217,235 @@ fun GalTripsApp(
     onOpenUrl: (String) -> Unit,
     onShareTrip: (Trip) -> Unit,
     cloudManager: FirebaseCloudManager,
+    onRemoteStateChange: (AppState) -> Unit,
     onImportTrip: (String) -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
     var selectedDayId by remember { mutableStateOf<String?>(null) }
     var showAddTrip by remember { mutableStateOf(false) }
-    val trip = state.trips.firstOrNull { it.id == state.currentTripId } ?: state.trips.first()
+    val trip = state.trips.firstOrNull {
+        it.id == state.currentTripId
+    } ?: state.trips.first()
+
+    val todayListenerDayId = remember(
+        trip.id,
+        trip.days
+    ) {
+        val today = LocalDate.now().toString()
+        trip.days.firstOrNull {
+            it.date == today
+        }?.id ?: trip.days
+            .sortedBy { it.date }
+            .firstOrNull()?.id
+    }
+
+    val activeListenerDayId = when {
+        tab == 4 && selectedDayId != null ->
+            selectedDayId
+        tab == 1 -> todayListenerDayId
+        else -> null
+    }
+
+    DisposableEffect(
+        trip.id,
+        trip.cloudSchemaVersion,
+        tab,
+        activeListenerDayId
+    ) {
+        if (
+            !trip.cloudEnabled ||
+            trip.cloudSchemaVersion < 9
+        ) {
+            onDispose {}
+        } else {
+            val registration = when (tab) {
+                1, 4 -> {
+                    val dayId =
+                        activeListenerDayId
+                    if (dayId == null) {
+                        null
+                    } else {
+                        cloudManager
+                            .listenActivitiesForDayV9(
+                                trip.id,
+                                dayId,
+                                onChange = {
+                                    cloudItems ->
+                                    val updatedTrip =
+                                        trip.copy(
+                                            days =
+                                                trip.days.map {
+                                                    day ->
+                                                    if (
+                                                        day.id ==
+                                                            dayId
+                                                    ) {
+                                                        day.copy(
+                                                            activities =
+                                                                cloudItems
+                                                                    .map {
+                                                                        it.activity
+                                                                    }
+                                                        )
+                                                    } else {
+                                                        day
+                                                    }
+                                                }
+                                        )
+                                    if (
+                                        updatedTrip != trip
+                                    ) {
+                                        onRemoteStateChange(
+                                            state.replaceTrip(
+                                                updatedTrip
+                                            )
+                                        )
+                                    }
+                                },
+                                onError = {
+                                    // Local cache stays visible.
+                                }
+                            )
+                    }
+                }
+
+                2 -> cloudManager.listenCollectionV9(
+                    trip.id,
+                    "flights",
+                    Flight.serializer(),
+                    onChange = { items ->
+                        val sorted = items.sortedWith(
+                            compareBy<Flight> {
+                                it.departureDate
+                            }.thenBy {
+                                it.departureTime
+                            }
+                        )
+                        if (sorted != trip.flights) {
+                            onRemoteStateChange(
+                                state.replaceTrip(
+                                    trip.copy(
+                                        flights = sorted
+                                    )
+                                )
+                            )
+                        }
+                    },
+                    onError = {}
+                )
+
+                3 -> cloudManager.listenCollectionV9(
+                    trip.id,
+                    "hotels",
+                    Hotel.serializer(),
+                    onChange = { items ->
+                        val sorted = items.sortedBy {
+                            it.checkIn
+                        }
+                        if (sorted != trip.hotels) {
+                            onRemoteStateChange(
+                                state.replaceTrip(
+                                    trip.copy(
+                                        hotels = sorted
+                                    )
+                                )
+                            )
+                        }
+                    },
+                    onError = {}
+                )
+
+                5 -> cloudManager.listenCollectionV9(
+                    trip.id,
+                    "restaurants",
+                    Restaurant.serializer(),
+                    onChange = { items ->
+                        if (
+                            items !=
+                                trip.restaurants
+                        ) {
+                            onRemoteStateChange(
+                                state.replaceTrip(
+                                    trip.copy(
+                                        restaurants =
+                                            items
+                                    )
+                                )
+                            )
+                        }
+                    },
+                    onError = {}
+                )
+
+                6 -> cloudManager.listenCollectionV9(
+                    trip.id,
+                    "expenses",
+                    Expense.serializer(),
+                    onChange = { items ->
+                        if (items != trip.expenses) {
+                            onRemoteStateChange(
+                                state.replaceTrip(
+                                    trip.copy(
+                                        expenses = items
+                                    )
+                                )
+                            )
+                        }
+                    },
+                    onError = {}
+                )
+
+                7 -> cloudManager.listenCollectionV9(
+                    trip.id,
+                    "documents",
+                    TripDocument.serializer(),
+                    onChange = { items ->
+                        if (
+                            items !=
+                                trip.documents
+                        ) {
+                            onRemoteStateChange(
+                                state.replaceTrip(
+                                    trip.copy(
+                                        documents = items
+                                    )
+                                )
+                            )
+                        }
+                    },
+                    onError = {}
+                )
+
+                9 -> cloudManager.listenCollectionV9(
+                    trip.id,
+                    "packing",
+                    PackingItem.serializer(),
+                    onChange = { items ->
+                        if (
+                            items !=
+                                trip.packingItems
+                        ) {
+                            onRemoteStateChange(
+                                state.replaceTrip(
+                                    trip.copy(
+                                        packingItems =
+                                            items
+                                    )
+                                )
+                            )
+                        }
+                    },
+                    onError = {}
+                )
+
+                else -> null
+            }
+
+            onDispose {
+                registration?.remove()
+            }
+        }
+    }
 
     LaunchedEffect(state.currentTripId) {
         selectedDayId = null
