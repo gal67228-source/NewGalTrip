@@ -58,7 +58,15 @@ class DiffSyncCoordinator(
         }.onSuccess {
             onSynced(it)
         }.onFailure {
-            onError(it)
+            error ->
+            if (
+                error is SyncConflictException
+            ) {
+                ConflictCenter.publish(
+                    error.conflict
+                )
+            }
+            onError(error)
         }
     }
 

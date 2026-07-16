@@ -19,6 +19,7 @@ data class ActivityPatch(
 )
 
 object ActivityDiff {
+    // Cloud revision metadata is intentionally excluded.
     fun changedFields(
         old: ActivityItem,
         new: ActivityItem

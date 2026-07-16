@@ -220,6 +220,9 @@ fun GalTripsApp(
     onRemoteStateChange: (AppState) -> Unit,
     onImportTrip: (String) -> Unit
 ) {
+    val syncConflict by ConflictCenter.conflict
+        .collectAsState()
+
     var tab by remember { mutableIntStateOf(0) }
     var selectedDayId by remember { mutableStateOf<String?>(null) }
     var showAddTrip by remember { mutableStateOf(false) }
@@ -587,6 +590,66 @@ fun GalTripsApp(
                 )
             }
         }
+    }
+
+    syncConflict?.let { conflict ->
+        AlertDialog(
+            onDismissRequest = {
+                ConflictCenter.clear()
+            },
+            title = {
+                Text("שינוי במכשיר אחר")
+            },
+            text = {
+                Column(
+                    verticalArrangement =
+                        Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(conflict.message)
+                    Text(
+                        "השינוי המקומי נשמר במכשיר ולא נדרס.",
+                        color = TextSecondary
+                    )
+                    if (
+                        conflict.remoteUpdatedBy
+                            .isNotBlank()
+                    ) {
+                        Text(
+                            "עודכן על ידי: ${conflict.remoteUpdatedBy}",
+                            style =
+                                MaterialTheme.typography
+                                    .bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+                    Text(
+                        "גרסה מקומית: ${conflict.localRevision} · גרסה בענן: ${conflict.remoteRevision}",
+                        style =
+                            MaterialTheme.typography
+                                .labelSmall,
+                        color = TextSecondary
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        ConflictCenter.clear()
+                    }
+                ) {
+                    Text("טען את העדכון מהענן")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        ConflictCenter.clear()
+                    }
+                ) {
+                    Text("השאר את השינוי המקומי")
+                }
+            }
+        )
     }
 
     if (showAddTrip) {

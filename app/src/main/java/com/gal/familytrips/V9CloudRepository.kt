@@ -195,21 +195,61 @@ class V9CloudRepository(
 
         if (values.isEmpty()) return
 
-        values["dayId"] = dayId
-        values["position"] = position
-        values["updatedAt"] =
-            System.currentTimeMillis()
-        values["updatedBy"] = userId
-        values["revision"] =
-            com.google.firebase.firestore
-                .FieldValue.increment(1)
-
-        firestore.collection("trips")
+        val document = firestore.collection("trips")
             .document(tripId)
             .collection("activities")
             .document(new.id)
-            .set(values, SetOptions.merge())
-            .await()
+
+        firestore.runTransaction {
+            transaction ->
+            val snapshot =
+                transaction.get(document)
+            val remoteRevision =
+                snapshot.getLong("revision")
+                    ?: 0L
+
+            if (
+                old.cloudRevision > 0 &&
+                remoteRevision !=
+                    old.cloudRevision
+            ) {
+                throw SyncConflictException(
+                    SyncConflict(
+                        tripId = tripId,
+                        entityType = "activity",
+                        entityId = new.id,
+                        localRevision =
+                            old.cloudRevision,
+                        remoteRevision =
+                            remoteRevision,
+                        remoteUpdatedBy =
+                            snapshot.getString(
+                                "updatedBy"
+                            ).orEmpty(),
+                        remoteUpdatedAt =
+                            snapshot.getLong(
+                                "updatedAt"
+                            ) ?: 0L,
+                        message =
+                            "הפעילות עודכנה במכשיר אחר"
+                    )
+                )
+            }
+
+            values["dayId"] = dayId
+            values["position"] = position
+            values["updatedAt"] =
+                System.currentTimeMillis()
+            values["updatedBy"] = userId
+            values["revision"] =
+                remoteRevision + 1
+
+            transaction.set(
+                document,
+                values,
+                SetOptions.merge()
+            )
+        }.await()
     }
 
     suspend fun updateActivityBatch(
@@ -219,52 +259,110 @@ class V9CloudRepository(
     ) {
         if (changes.isEmpty()) return
 
-        val batch = firestore.batch()
         val tripRef = firestore.collection("trips")
             .document(tripId)
         val now = System.currentTimeMillis()
 
-        changes.forEach { patch ->
-            val values = ActivityDiff
-                .changedFields(
-                    patch.old,
-                    patch.new
-                )
-                .toMutableMap()
+        firestore.runTransaction {
+            transaction ->
+            val prepared =
+                mutableListOf<Triple<
+                    com.google.firebase.firestore
+                        .DocumentReference,
+                    MutableMap<String, Any>,
+                    Long
+                >>()
 
-            if (
-                patch.oldPosition !=
-                    patch.newPosition
-            ) {
-                values["position"] =
-                    patch.newPosition
+            changes.forEach { patch ->
+                val reference =
+                    tripRef.collection(
+                        "activities"
+                    ).document(patch.new.id)
+                val snapshot =
+                    transaction.get(reference)
+                val remoteRevision =
+                    snapshot.getLong(
+                        "revision"
+                    ) ?: 0L
+                val expectedRevision =
+                    patch.old.cloudRevision
+
+                if (
+                    expectedRevision > 0 &&
+                    remoteRevision !=
+                        expectedRevision
+                ) {
+                    throw SyncConflictException(
+                        SyncConflict(
+                            tripId = tripId,
+                            entityType =
+                                "activity",
+                            entityId =
+                                patch.new.id,
+                            localRevision =
+                                expectedRevision,
+                            remoteRevision =
+                                remoteRevision,
+                            remoteUpdatedBy =
+                                snapshot.getString(
+                                    "updatedBy"
+                                ).orEmpty(),
+                            remoteUpdatedAt =
+                                snapshot.getLong(
+                                    "updatedAt"
+                                ) ?: 0L,
+                            message =
+                                "סדר הפעילויות השתנה במכשיר אחר"
+                        )
+                    )
+                }
+
+                val values = ActivityDiff
+                    .changedFields(
+                        patch.old,
+                        patch.new
+                    )
+                    .toMutableMap()
+
+                if (
+                    patch.oldPosition !=
+                        patch.newPosition
+                ) {
+                    values["position"] =
+                        patch.newPosition
+                }
+
+                if (
+                    patch.oldDayId !=
+                        patch.newDayId
+                ) {
+                    values["dayId"] =
+                        patch.newDayId
+                }
+
+                if (values.isNotEmpty()) {
+                    prepared += Triple(
+                        reference,
+                        values,
+                        remoteRevision
+                    )
+                }
             }
 
-            if (
-                patch.oldDayId !=
-                    patch.newDayId
-            ) {
-                values["dayId"] =
-                    patch.newDayId
-            }
-
-            if (values.isNotEmpty()) {
+            prepared.forEach {
+                (reference, values, revision) ->
                 values["updatedAt"] = now
                 values["updatedBy"] = userId
                 values["revision"] =
-                    com.google.firebase.firestore
-                        .FieldValue.increment(1)
+                    revision + 1
 
-                batch.set(
-                    tripRef.collection("activities")
-                        .document(patch.new.id),
+                transaction.set(
+                    reference,
                     values,
                     SetOptions.merge()
                 )
             }
-        }
-
-        batch.commit().await()
+        }.await()
     }
 
     suspend fun deleteEntity(
@@ -450,9 +548,27 @@ class V9CloudRepository(
                         document.getString("payload")
                             ?.let { raw ->
                                 runCatching {
-                                    json.decodeFromString(
-                                        CloudActivity.serializer(),
-                                        raw
+                                    val decoded =
+                                        json.decodeFromString(
+                                            CloudActivity.serializer(),
+                                            raw
+                                        )
+                                    decoded.copy(
+                                        activity =
+                                            decoded.activity.copy(
+                                                cloudRevision =
+                                                    document.getLong(
+                                                        "revision"
+                                                    ) ?: 0L,
+                                                cloudUpdatedAt =
+                                                    document.getLong(
+                                                        "updatedAt"
+                                                    ) ?: 0L,
+                                                cloudUpdatedBy =
+                                                    document.getString(
+                                                        "updatedBy"
+                                                    ).orEmpty()
+                                            )
                                     )
                                 }.getOrNull()
                             }
