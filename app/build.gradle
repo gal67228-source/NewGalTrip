@@ -21,13 +21,23 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 130
-        versionName '4.6.2-family-live-sharing'
+        versionCode 132
+        versionName '4.6.2.2-final-google-config'
 
         buildConfigField "String", "ROUTES_WORKER_URL",
             "\"${routesWorkerUrl.replace('\\', '\\\\').replace('\"', '\\\"')}\""
         buildConfigField "String", "ROUTES_APP_TOKEN",
             "\"${routesAppToken.replace('\\', '\\\\').replace('\"', '\\\"')}\""
+    }
+
+
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
     }
 
     buildFeatures {
@@ -48,6 +58,7 @@ android {
 
     buildTypes {
         debug {
+            signingConfig signingConfigs.debug
             versionNameSuffix '-debug'
         }
         release {

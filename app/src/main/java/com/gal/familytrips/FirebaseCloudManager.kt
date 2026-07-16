@@ -4,7 +4,9 @@ import android.app.Activity
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
@@ -42,35 +44,66 @@ class FirebaseCloudManager(
 
     suspend fun signInWithGoogle():
         CloudUserProfile {
-        val googleIdOption =
-            GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(
-                    activity.getString(
-                        R.string.default_web_client_id
+        val serverClientId =
+            activity.getString(
+                R.string.default_web_client_id
+            )
+
+        val credential = try {
+            val googleIdOption =
+                GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(
+                        false
                     )
-                )
-                .setAutoSelectEnabled(false)
-                .build()
+                    .setServerClientId(
+                        serverClientId
+                    )
+                    .setAutoSelectEnabled(false)
+                    .build()
 
-        val request =
-            GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
-                .build()
+            val request =
+                GetCredentialRequest.Builder()
+                    .addCredentialOption(
+                        googleIdOption
+                    )
+                    .build()
 
-        val result = credentialManager.getCredential(
-            context = activity,
-            request = request
-        )
+            credentialManager.getCredential(
+                context = activity,
+                request = request
+            ).credential
+        } catch (
+            error: NoCredentialException
+        ) {
+            val explicitGoogleOption =
+                GetSignInWithGoogleOption
+                    .Builder(
+                        serverClientId
+                    )
+                    .build()
 
-        val credential = result.credential
+            val explicitRequest =
+                GetCredentialRequest.Builder()
+                    .addCredentialOption(
+                        explicitGoogleOption
+                    )
+                    .build()
+
+            credentialManager.getCredential(
+                context = activity,
+                request = explicitRequest
+            ).credential
+        }
+
         if (
             credential !is CustomCredential ||
             credential.type !=
                 GoogleIdTokenCredential
                     .TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
         ) {
-            error("לא התקבל חשבון Google תקין")
+            error(
+                "לא התקבל חשבון Google תקין"
+            )
         }
 
         val googleCredential =
@@ -89,7 +122,9 @@ class FirebaseCloudManager(
         ).await()
 
         return currentProfile()
-            ?: error("ההתחברות ל-Google נכשלה")
+            ?: error(
+                "ההתחברות ל-Google נכשלה"
+            )
     }
 
     fun signOut() {

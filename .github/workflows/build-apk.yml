@@ -73,25 +73,20 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          KEYSTORE="$HOME/.android/debug.keystore"
-          mkdir -p "$HOME/.android"
-
-          if [ ! -f "$KEYSTORE" ]; then
-            keytool -genkeypair \
-              -v \
-              -keystore "$KEYSTORE" \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -dname "CN=Android Debug,O=Android,C=US" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000
-          fi
+          KEYSTORE="app/debug.keystore"
 
           echo "============================================"
           echo "FIREBASE DEBUG SIGNING FINGERPRINTS"
+          echo "============================================"
+
+          keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -alias androiddebugkey \
+            -storepass android \
+            -keypass android | grep -E "SHA1:|SHA256:"
+
+          echo "============================================"
+          echo "These fingerprints stay fixed between builds"
           echo "============================================"
 
           keytool -list -v \
@@ -123,7 +118,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gal-Family-Trips-V8-6-2-Family-Live-Sharing-APK
+          name: Gal-Family-Trips-V8-6-2-2-Final-Google-Config-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

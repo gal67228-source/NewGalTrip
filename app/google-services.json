@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "263573314214-m12gbcu93jaf9u365tliaour4gds4jl8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gal.familytrips",
+            "certificate_hash": "850109d812d62cb2b10dfaa5c8bf2081a3290b1d"
+          }
+        },
+        {
           "client_id": "263573314214-otvm1jb16mve53bnq5sa8nb486pf89km.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
