@@ -92,19 +92,84 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             GalTripsTheme {
-                var state by remember { mutableStateOf<AppState?>(null) }
+                var state by remember {
+                    mutableStateOf<AppState?>(null)
+                }
+                var authLoading by remember {
+                    mutableStateOf(true)
+                }
+                var authError by remember {
+                    mutableStateOf<String?>(null)
+                }
+                val composeScope = rememberCoroutineScope()
 
-                LaunchedEffect(Unit) {
-                    val loaded = store.load()
-                    state = loaded.copy(
-                        currentUser =
-                            cloudManager.currentProfile()
-                                ?: loaded.currentUser
+                suspend fun loadAccount(
+                    profile: CloudUserProfile
+                ) {
+                    val local = store.load()
+                    val cloudTrips = runCatching {
+                        cloudManager.fetchUserTrips(profile)
+                    }.getOrElse {
+                        authError = it.localizedMessage
+                            ?: "טעינת נתוני הענן נכשלה"
+                        emptyList()
+                    }
+                    val trips = if (cloudTrips.isNotEmpty()) {
+                        cloudTrips
+                    } else {
+                        local.trips
+                    }
+                    val selected = if (
+                        trips.any { it.id == local.currentTripId }
+                    ) local.currentTripId else trips.first().id
+
+                    val next = local.copy(
+                        trips = trips,
+                        currentTripId = selected,
+                        currentUser = profile
                     )
+                    state = next
+                    store.save(next)
                 }
 
-                state?.let { loaded ->
-                    GalTripsApp(
+                LaunchedEffect(Unit) {
+                    cloudManager.currentProfile()?.let {
+                        loadAccount(it)
+                    }
+                    authLoading = false
+                }
+
+                when {
+                    authLoading -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+
+                    state?.currentUser == null -> LoginScreen(
+                        error = authError,
+                        loading = authLoading,
+                        onSignIn = {
+                            authLoading = true
+                            authError = null
+                            composeScope.launch {
+                                runCatching {
+                                    cloudManager.signInWithGoogle()
+                                }.onSuccess {
+                                    loadAccount(it)
+                                }.onFailure {
+                                    authError = it.localizedMessage
+                                        ?: "ההתחברות נכשלה"
+                                }
+                                authLoading = false
+                            }
+                        }
+                    )
+
+                    else -> {
+                        val loaded = state!!
+                        GalTripsApp(
                         state = loaded,
                         onStateChange = { next ->
                             val previous = state
@@ -148,6 +213,24 @@ class MainActivity : ComponentActivity() {
                             shareTripPackage(it)
                         },
                         cloudManager = cloudManager,
+                        onSignOut = {
+                            cloudManager.signOut()
+                            composeScope.launch {
+                                val local = store.load()
+                                val next = local.copy(
+                                    currentUser = null
+                                )
+                                store.save(next)
+                                state = next
+                            }
+                        },
+                        onReloadCloud = {
+                            state?.currentUser?.let { profile ->
+                                composeScope.launch {
+                                    loadAccount(profile)
+                                }
+                            }
+                        },
                         onRemoteStateChange = {
                             remote ->
                             state = remote
@@ -167,8 +250,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     )
-                } ?: Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                    CircularProgressIndicator()
+                    }
                 }
             }
         }
@@ -211,12 +293,222 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+private fun LoginScreen(
+    error: String?,
+    loading: Boolean,
+    onSignIn: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(SoftBlue)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(26.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = CardWhite
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(26.dp),
+                horizontalAlignment =
+                    Alignment.CenterHorizontally,
+                verticalArrangement =
+                    Arrangement.spacedBy(16.dp)
+            ) {
+                Text("🌍", style =
+                    MaterialTheme.typography.displaySmall)
+                Text(
+                    "Gal Family Trips",
+                    style =
+                        MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+                Text(
+                    "התחבר כדי לטעון את הטיולים שלך ולסנכרן אותם עם המשפחה.",
+                    color = TextSecondary
+                )
+                Button(
+                    onClick = onSignIn,
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("G", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(10.dp))
+                    Text("התחברות עם Google")
+                }
+                error?.let {
+                    Text(it, color = Coral)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmartDashboardScreen(
+    state: AppState,
+    onStateChange: (AppState) -> Unit,
+    onCreateTrip: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val today = LocalDate.now()
+    val nextTrip = state.trips
+        .sortedBy { it.startDate }
+        .firstOrNull {
+            runCatching {
+                !LocalDate.parse(it.startDate)
+                    .isBefore(today)
+            }.getOrDefault(false)
+        } ?: state.trips.firstOrNull()
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement =
+            Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Text(
+                "שלום ${state.currentUser?.displayName.orEmpty()}",
+                style =
+                    MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+            Text(
+                "הטיולים שלך מסונכרנים עם החשבון",
+                color = TextSecondary
+            )
+        }
+
+        nextTrip?.let { trip ->
+            item {
+                SectionCard(containerColor = SoftBlue) {
+                    Text(
+                        "הטיול הקרוב",
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    Text(
+                        trip.name,
+                        style =
+                            MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "${trip.destination} · ${trip.startDate}",
+                        color = TextSecondary
+                    )
+                    Button(
+                        onClick = {
+                            onStateChange(
+                                state.copy(
+                                    currentTripId = trip.id
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("המשך לטיול")
+                    }
+                }
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.SpaceBetween,
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+                Text(
+                    "הטיולים שלי",
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+                TextButton(onClick = onCreateTrip) {
+                    Icon(Icons.Default.Add, null)
+                    Text("טיול חדש")
+                }
+            }
+        }
+
+        items(state.trips, key = { it.id }) { trip ->
+            SectionCard(containerColor = CardWhite) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            trip.name,
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+                        Text(
+                            trip.destination,
+                            color = TextSecondary
+                        )
+                        Text(
+                            "${trip.startDate} – ${trip.endDate}",
+                            style =
+                                MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            onStateChange(
+                                state.copy(
+                                    currentTripId = trip.id
+                                )
+                            )
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowForward,
+                            contentDescription = "פתיחה"
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsInfoRow(
+    title: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement =
+            Arrangement.SpaceBetween
+    ) {
+        Text(title, color = Navy)
+        Text(value, color = TextSecondary)
+    }
+}
+
+@Composable
 fun GalTripsApp(
     state: AppState,
     onStateChange: (AppState) -> Unit,
     onOpenUrl: (String) -> Unit,
     onShareTrip: (Trip) -> Unit,
     cloudManager: FirebaseCloudManager,
+    onSignOut: () -> Unit,
+    onReloadCloud: () -> Unit,
     onRemoteStateChange: (AppState) -> Unit,
     onImportTrip: (String) -> Unit
 ) {
@@ -225,7 +517,18 @@ fun GalTripsApp(
 
     var tab by remember { mutableIntStateOf(0) }
     var selectedDayId by remember { mutableStateOf<String?>(null) }
-    var showAddTrip by remember { mutableStateOf(false) }
+    var showAddTrip by remember {
+        mutableStateOf(false)
+    }
+    var showMainMenu by remember {
+        mutableStateOf(false)
+    }
+    var showAccountDialog by remember {
+        mutableStateOf(false)
+    }
+    var showSettingsDialog by remember {
+        mutableStateOf(false)
+    }
     val trip = state.trips.firstOrNull {
         it.id == state.currentTripId
     } ?: state.trips.first()
@@ -457,6 +760,78 @@ fun GalTripsApp(
     }
 
     Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        if (tab == 0) "הטיולים שלי"
+                        else trip.name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                actions = {
+                    Box {
+                        IconButton(
+                            onClick = { showMainMenu = true }
+                        ) {
+                            Icon(
+                                Icons.Default.MoreVert,
+                                contentDescription = "תפריט"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showMainMenu,
+                            onDismissRequest = {
+                                showMainMenu = false
+                            }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("חשבון Google") },
+                                leadingIcon = {
+                                    Text(
+                                        "G",
+                                        color = Color(0xFF4285F4),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    showAccountDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("הגדרות") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Settings, null)
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    showSettingsDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text("התנתקות", color = Coral)
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Logout,
+                                        null,
+                                        tint = Coral
+                                    )
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    onSignOut()
+                                }
+                            )
+                        }
+                    }
+                }
+            )
+        },
         bottomBar = {
             NavigationBar(
                 containerColor = CardWhite,
@@ -499,13 +874,13 @@ fun GalTripsApp(
     ) { padding ->
         key(trip.id, tab) {
             when (tab) {
-                0 -> TripsScreen(
-                    state,
-                    onStateChange,
-                    onShareTrip,
-                    cloudManager,
-                    onImportTrip,
-                    Modifier.padding(padding)
+                0 -> SmartDashboardScreen(
+                    state = state,
+                    onStateChange = onStateChange,
+                    onCreateTrip = {
+                        showAddTrip = true
+                    },
+                    modifier = Modifier.padding(padding)
                 )
 
                 1 -> TodayScreen(
@@ -648,6 +1023,80 @@ fun GalTripsApp(
                 ) {
                     Text("השאר את השינוי המקומי")
                 }
+            }
+        )
+    }
+
+    if (showAccountDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showAccountDialog = false
+            },
+            title = { Text("חשבון Google") },
+            text = {
+                Column(
+                    verticalArrangement =
+                        Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        state.currentUser?.displayName
+                            ?: "משתמש"
+                    )
+                    Text(
+                        state.currentUser?.email.orEmpty(),
+                        color = TextSecondary
+                    )
+                    Text("${state.trips.size} טיולים בחשבון")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAccountDialog = false
+                        onReloadCloud()
+                    }
+                ) { Text("רענון מהענן") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAccountDialog = false
+                        onSignOut()
+                    }
+                ) {
+                    Text("התנתקות", color = Coral)
+                }
+            }
+        )
+    }
+
+    if (showSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showSettingsDialog = false
+            },
+            title = { Text("הגדרות") },
+            text = {
+                Column(
+                    verticalArrangement =
+                        Arrangement.spacedBy(12.dp)
+                ) {
+                    SettingsInfoRow("סנכרון אוטומטי", "פעיל")
+                    SettingsInfoRow("שמירה אופליין", "פעילה")
+                    SettingsInfoRow("מטבע", "₪")
+                    SettingsInfoRow("יחידות מרחק", "ק״מ")
+                    SettingsInfoRow(
+                        "גרסה",
+                        BuildConfig.VERSION_NAME
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSettingsDialog = false
+                    }
+                ) { Text("סגירה") }
             }
         )
     }

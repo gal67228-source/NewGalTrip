@@ -394,4 +394,51 @@ class FirebaseCloudManager(
         )
 
 
+    suspend fun fetchUserTrips(
+        profile: CloudUserProfile
+    ): List<Trip> {
+        val snapshot = firestore.collection("trips")
+            .whereArrayContains("memberIds", profile.userId)
+            .get()
+            .await()
+
+        return snapshot.documents.mapNotNull { document ->
+            document.getString("tripJson")?.let { raw ->
+                runCatching {
+                    json.decodeFromString(
+                        Trip.serializer(),
+                        raw
+                    )
+                }.getOrNull()
+            } ?: runCatching {
+                Trip(
+                    id = document.id,
+                    name = document.getString("name").orEmpty(),
+                    destination = document
+                        .getString("destination").orEmpty(),
+                    destinationStops =
+                        (document.get("destinationStops") as? List<*>)
+                            ?.filterIsInstance<String>().orEmpty(),
+                    startDate = document
+                        .getString("startDate").orEmpty(),
+                    endDate = document
+                        .getString("endDate").orEmpty(),
+                    ownerUserId = document
+                        .getString("ownerUserId").orEmpty(),
+                    cloudEnabled = true,
+                    cloudSchemaVersion =
+                        document.getLong("cloudSchemaVersion")
+                            ?.toInt() ?: 9,
+                    cloudRevision =
+                        document.getLong("cloudRevision") ?: 0L,
+                    updatedAt =
+                        document.getLong("updatedAt") ?: 0L,
+                    updatedBy =
+                        document.getString("updatedBy").orEmpty()
+                )
+            }.getOrNull()
+        }.sortedByDescending { it.updatedAt }
+    }
+
+
 }
