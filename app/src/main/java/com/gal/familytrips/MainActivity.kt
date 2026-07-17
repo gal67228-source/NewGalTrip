@@ -56,6 +56,7 @@ import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -65,11 +66,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var cloudManager: FirebaseCloudManager
     private var diffSyncCoordinator:
         DiffSyncCoordinator? = null
+    private val pendingInviteCode =
+        MutableStateFlow<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = TripStore(this)
         cloudManager = FirebaseCloudManager(this)
+        consumeInviteIntent(intent)
         diffSyncCoordinator =
             DiffSyncCoordinator(
                 scope = lifecycleScope,
@@ -94,6 +98,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             GalTripsTheme {
+                val inviteCodeFromLink by
+                    pendingInviteCode.collectAsState()
                 var state by remember {
                     mutableStateOf<AppState?>(null)
                 }
@@ -239,6 +245,12 @@ class MainActivity : ComponentActivity() {
                                 state = next
                             }
                         },
+                        incomingInviteCode =
+                            inviteCodeFromLink,
+                        onInviteCodeConsumed = {
+                            pendingInviteCode.value =
+                                null
+                        },
                         onReloadCloud = {
                             state?.currentUser?.let { profile ->
                                 composeScope.launch {
@@ -267,6 +279,39 @@ class MainActivity : ComponentActivity() {
                     )
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeInviteIntent(intent)
+    }
+
+    private fun consumeInviteIntent(
+        sourceIntent: Intent?
+    ) {
+        val uri = sourceIntent?.data ?: return
+        if (
+            uri.scheme.equals(
+                "familygo",
+                ignoreCase = true
+            ) &&
+            uri.host.equals(
+                "invite",
+                ignoreCase = true
+            )
+        ) {
+            val code = uri
+                .getQueryParameter("code")
+                ?.trim()
+                ?.uppercase()
+                ?.takeIf { it.length == 6 }
+
+            if (code != null) {
+                pendingInviteCode.value = code
+                sourceIntent.data = null
             }
         }
     }
@@ -548,6 +593,8 @@ fun GalTripsApp(
     onOpenUrl: (String) -> Unit,
     onShareTrip: (Trip) -> Unit,
     cloudManager: FirebaseCloudManager,
+    incomingInviteCode: String?,
+    onInviteCodeConsumed: () -> Unit,
     onSignOut: () -> Unit,
     onReloadCloud: () -> Unit,
     onRemoteStateChange: (AppState) -> Unit,
@@ -587,6 +634,15 @@ fun GalTripsApp(
         mutableStateOf<TripInvite?>(null)
     }
     val sharingScope = rememberCoroutineScope()
+
+    LaunchedEffect(incomingInviteCode) {
+        val code = incomingInviteCode
+        if (!code.isNullOrBlank()) {
+            showJoinDialog = true
+            sharingMessage = null
+            activeInvite = null
+        }
+    }
     val trip = state.trips.firstOrNull {
         it.id == state.currentTripId
     } ?: state.trips.first()
@@ -1246,7 +1302,7 @@ fun GalTripsApp(
                                     val link =
                                         "familygo://invite?code=${invite.code}"
                                     val message =
-                                        "הוזמנת לטיול ${invite.tripName} ב-FamilyGo.\nקוד: ${invite.code}\n$link"
+                                        "$link\n\nהוזמנת לטיול ${invite.tripName} ב-FamilyGo.\nקוד הזמנה: ${invite.code}"
                                     val intent =
                                         Intent(Intent.ACTION_SEND).apply {
                                             type = "text/plain"
@@ -1289,7 +1345,34 @@ fun GalTripsApp(
     }
 
     if (showJoinDialog) {
-        var inviteCode by remember { mutableStateOf("") }
+        var inviteCode by remember(
+            incomingInviteCode
+        ) {
+            mutableStateOf(
+                incomingInviteCode.orEmpty()
+            )
+        }
+
+        LaunchedEffect(incomingInviteCode) {
+            val code = incomingInviteCode
+            if (!code.isNullOrBlank()) {
+                inviteCode = code
+                sharingBusy = true
+                sharingMessage = null
+                runCatching {
+                    cloudManager.getTripInvite(code)
+                }.onSuccess {
+                    activeInvite = it
+                    onInviteCodeConsumed()
+                }.onFailure {
+                    sharingMessage =
+                        it.localizedMessage
+                            ?: "קישור ההזמנה אינו תקין"
+                    onInviteCodeConsumed()
+                }
+                sharingBusy = false
+            }
+        }
 
         AlertDialog(
             onDismissRequest = {
@@ -1305,6 +1388,33 @@ fun GalTripsApp(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                    if (state.currentUser == null) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = SoftSun
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement =
+                                    Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "כדי להצטרף לטיול משותף יש להתחבר עם Google.",
+                                    color = Navy,
+                                    fontWeight =
+                                        FontWeight.Bold
+                                )
+                                Text(
+                                    "הקישור נשמר וייפתח שוב לאחר ההתחברות.",
+                                    color = TextSecondary,
+                                    style =
+                                        MaterialTheme.typography
+                                            .bodySmall
+                                )
+                            }
+                        }
+                    }
+
                     OutlinedTextField(
                         value = inviteCode,
                         onValueChange = {
@@ -1316,7 +1426,9 @@ fun GalTripsApp(
                     )
 
                     Button(
-                        enabled = !sharingBusy &&
+                        enabled =
+                            state.currentUser != null &&
+                            !sharingBusy &&
                             inviteCode.length == 6,
                         onClick = {
                             sharingBusy = true
