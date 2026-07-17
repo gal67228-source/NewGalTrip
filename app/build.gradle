@@ -21,8 +21,8 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 230
-        versionName '5.3.0-family-management'
+        versionCode 231
+        versionName '5.3.1-family-management-build-fix'
 
         buildConfigField "String", "ROUTES_WORKER_URL",
             "\"${routesWorkerUrl.replace('\\', '\\\\').replace('\"', '\\\"')}\""

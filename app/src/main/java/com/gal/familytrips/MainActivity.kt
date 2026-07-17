@@ -654,6 +654,18 @@ fun GalTripsApp(
     }
     val sharingScope = rememberCoroutineScope()
 
+    LaunchedEffect(incomingInviteCode) {
+        val code = incomingInviteCode
+        if (!code.isNullOrBlank()) {
+            showJoinDialog = true
+            sharingMessage = null
+            activeInvite = null
+        }
+    }
+    val trip = state.trips.firstOrNull {
+        it.id == state.currentTripId
+    } ?: state.trips.first()
+
     LaunchedEffect(
         showFamilyManagement,
         trip.id
@@ -686,18 +698,6 @@ fun GalTripsApp(
             familyLoading = false
         }
     }
-
-    LaunchedEffect(incomingInviteCode) {
-        val code = incomingInviteCode
-        if (!code.isNullOrBlank()) {
-            showJoinDialog = true
-            sharingMessage = null
-            activeInvite = null
-        }
-    }
-    val trip = state.trips.firstOrNull {
-        it.id == state.currentTripId
-    } ?: state.trips.first()
 
     val todayListenerDayId = remember(
         trip.id,

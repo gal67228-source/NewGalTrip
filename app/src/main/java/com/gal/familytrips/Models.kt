@@ -208,6 +208,7 @@ data class PendingTripInvite(
     val status: String = "pending"
 )
 
+@kotlinx.serialization.Serializable
 data class CloudUserProfile(
     val userId: String,
     val displayName: String,

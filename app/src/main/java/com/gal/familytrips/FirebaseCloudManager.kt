@@ -599,7 +599,8 @@ class FirebaseCloudManager(
         val editorIds =
             (tripSnapshot.get("editorIds") as? List<*>)
                 ?.filterIsInstance<String>()
-                .toSet()
+                ?.toSet()
+                .orEmpty()
 
         val memberDocs = firestore.collection("trips")
             .document(tripId)
@@ -609,7 +610,7 @@ class FirebaseCloudManager(
             .documents
             .associateBy { it.id }
 
-        return memberIds.distinct().map { userId ->
+        return memberIds.orEmpty().distinct().map { userId ->
             val memberDoc = memberDocs[userId]
             ManagedTripMember(
                 userId = userId,
