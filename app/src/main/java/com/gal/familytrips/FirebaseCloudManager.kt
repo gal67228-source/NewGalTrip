@@ -441,4 +441,138 @@ class FirebaseCloudManager(
     }
 
 
+    suspend fun createTripInvite(
+        trip: Trip,
+        profile: CloudUserProfile
+    ): TripInvite {
+        val ownerId = trip.ownerUserId.ifBlank {
+            profile.userId
+        }
+        require(ownerId == profile.userId) {
+            "רק בעל הטיול יכול ליצור הזמנה"
+        }
+
+        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        val code = buildString {
+            repeat(6) { append(chars.random()) }
+        }
+        val now = System.currentTimeMillis()
+        val invite = TripInvite(
+            code = code,
+            tripId = trip.id,
+            tripName = trip.name,
+            destination = trip.destination,
+            createdBy = profile.userId,
+            createdByName = profile.displayName,
+            createdAt = now,
+            expiresAt = now + 604800000L
+        )
+
+        firestore.collection("tripInvites")
+            .document(code)
+            .set(invite)
+            .await()
+
+        return invite
+    }
+
+    suspend fun getTripInvite(
+        code: String
+    ): TripInvite {
+        val normalized = code.trim().uppercase()
+        val snapshot = firestore.collection("tripInvites")
+            .document(normalized)
+            .get()
+            .await()
+
+        if (!snapshot.exists()) {
+            error("קוד ההזמנה אינו קיים")
+        }
+
+        val invite = snapshot.toObject(
+            TripInvite::class.java
+        ) ?: error("ההזמנה אינה תקינה")
+
+        if (invite.expiresAt < System.currentTimeMillis()) {
+            error("קוד ההזמנה פג תוקף")
+        }
+        if (invite.status != "pending") {
+            error("ההזמנה אינה פעילה")
+        }
+
+        return invite
+    }
+
+    suspend fun acceptTripInvite(
+        invite: TripInvite,
+        profile: CloudUserProfile
+    ): Trip {
+        val tripRef = firestore.collection("trips")
+            .document(invite.tripId)
+        val inviteRef = firestore.collection("tripInvites")
+            .document(invite.code)
+
+        firestore.runTransaction { transaction ->
+            val tripSnapshot = transaction.get(tripRef)
+            if (!tripSnapshot.exists()) {
+                error("הטיול אינו קיים")
+            }
+
+            val memberIds =
+                (tripSnapshot.get("memberIds") as? List<*>)
+                    ?.filterIsInstance<String>()
+                    ?.toMutableSet()
+                    ?: mutableSetOf()
+
+            val editorIds =
+                (tripSnapshot.get("editorIds") as? List<*>)
+                    ?.filterIsInstance<String>()
+                    ?.toMutableSet()
+                    ?: mutableSetOf()
+
+            memberIds += profile.userId
+            if (invite.role == "editor") {
+                editorIds += profile.userId
+            }
+
+            transaction.update(
+                tripRef,
+                mapOf(
+                    "memberIds" to memberIds.toList(),
+                    "editorIds" to editorIds.toList(),
+                    "updatedAt" to System.currentTimeMillis(),
+                    "updatedBy" to profile.userId
+                )
+            )
+            transaction.update(
+                inviteRef,
+                mapOf(
+                    "status" to "accepted",
+                    "acceptedBy" to profile.userId,
+                    "acceptedAt" to System.currentTimeMillis()
+                )
+            )
+        }.await()
+
+        return fetchUserTrips(profile)
+            .firstOrNull { it.id == invite.tripId }
+            ?: error("הטיול צורף אך לא נטען")
+    }
+
+    suspend fun declineTripInvite(
+        invite: TripInvite,
+        profile: CloudUserProfile
+    ) {
+        firestore.collection("tripInvites")
+            .document(invite.code)
+            .update(
+                mapOf(
+                    "status" to "declined",
+                    "declinedBy" to profile.userId,
+                    "declinedAt" to System.currentTimeMillis()
+                )
+            )
+            .await()
+    }
+
 }

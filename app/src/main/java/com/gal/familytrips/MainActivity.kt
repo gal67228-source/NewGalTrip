@@ -555,6 +555,7 @@ fun GalTripsApp(
 ) {
     val syncConflict by ConflictCenter.conflict
         .collectAsState()
+    val appContext = LocalContext.current
 
     var tab by remember { mutableIntStateOf(0) }
     var selectedDayId by remember { mutableStateOf<String?>(null) }
@@ -570,6 +571,22 @@ fun GalTripsApp(
     var showSettingsDialog by remember {
         mutableStateOf(false)
     }
+    var showSharingDialog by remember {
+        mutableStateOf(false)
+    }
+    var showJoinDialog by remember {
+        mutableStateOf(false)
+    }
+    var sharingBusy by remember {
+        mutableStateOf(false)
+    }
+    var sharingMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+    var activeInvite by remember {
+        mutableStateOf<TripInvite?>(null)
+    }
+    val sharingScope = rememberCoroutineScope()
     val trip = state.trips.firstOrNull {
         it.id == state.currentTripId
     } ?: state.trips.first()
@@ -842,6 +859,28 @@ fun GalTripsApp(
                                     showAccountDialog = true
                                 }
                             )
+                            DropdownMenuItem(
+                                text = { Text("שיתוף הטיול") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.GroupAdd, null)
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    showSharingDialog = true
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("הצטרפות באמצעות קוד") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.VpnKey, null)
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    showJoinDialog = true
+                                }
+                            )
+
                             DropdownMenuItem(
                                 text = { Text("הגדרות") },
                                 leadingIcon = {
@@ -1117,6 +1156,270 @@ fun GalTripsApp(
                 }
             },
             confirmButton = { Button(onClick = { showSettingsDialog = false }) { Text("שמירה וסגירה") } }
+        )
+    }
+
+    if (showSharingDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!sharingBusy) {
+                    showSharingDialog = false
+                    activeInvite = null
+                    sharingMessage = null
+                }
+            },
+            title = { Text("שיתוף הטיול") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        trip.name,
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    Text(trip.destination, color = TextSecondary)
+
+                    when {
+                        state.currentUser == null -> {
+                            Text(
+                                "יש להתחבר עם Google כדי לשתף טיול.",
+                                color = TextSecondary
+                            )
+                        }
+                        trip.ownerUserId.isNotBlank() &&
+                            trip.ownerUserId != state.currentUser.userId -> {
+                            Text(
+                                "רק בעל הטיול יכול ליצור הזמנה.",
+                                color = TextSecondary
+                            )
+                        }
+                        else -> {
+                            Button(
+                                enabled = !sharingBusy,
+                                onClick = {
+                                    val profile =
+                                        state.currentUser ?: return@Button
+                                    sharingBusy = true
+                                    sharingMessage = null
+                                    sharingScope.launch {
+                                        runCatching {
+                                            cloudManager.createTripInvite(
+                                                trip,
+                                                profile
+                                            )
+                                        }.onSuccess {
+                                            activeInvite = it
+                                        }.onFailure {
+                                            sharingMessage =
+                                                it.localizedMessage
+                                                    ?: "יצירת ההזמנה נכשלה"
+                                        }
+                                        sharingBusy = false
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Link, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("יצירת הזמנה")
+                            }
+                        }
+                    }
+
+                    activeInvite?.let { invite ->
+                        SectionCard(containerColor = SoftBlue) {
+                            Text("קוד ההזמנה", color = TextSecondary)
+                            Text(
+                                invite.code,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                            Text(
+                                "תקף לשבעה ימים",
+                                color = TextSecondary
+                            )
+                            Button(
+                                onClick = {
+                                    val link =
+                                        "familygo://invite?code=${invite.code}"
+                                    val message =
+                                        "הוזמנת לטיול ${invite.tripName} ב-FamilyGo.\nקוד: ${invite.code}\n$link"
+                                    val intent =
+                                        Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(
+                                                Intent.EXTRA_TEXT,
+                                                message
+                                            )
+                                        }
+                                    appContext.startActivity(
+                                        Intent.createChooser(
+                                            intent,
+                                            "שיתוף הזמנה"
+                                        )
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Share, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("שיתוף")
+                            }
+                        }
+                    }
+
+                    sharingMessage?.let {
+                        Text(it, color = Coral)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSharingDialog = false
+                        activeInvite = null
+                        sharingMessage = null
+                    }
+                ) { Text("סגירה") }
+            }
+        )
+    }
+
+    if (showJoinDialog) {
+        var inviteCode by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = {
+                if (!sharingBusy) {
+                    showJoinDialog = false
+                    activeInvite = null
+                    sharingMessage = null
+                }
+            },
+            title = { Text("הצטרפות לטיול") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    OutlinedTextField(
+                        value = inviteCode,
+                        onValueChange = {
+                            inviteCode = it.uppercase().take(6)
+                        },
+                        label = { Text("קוד הזמנה") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        enabled = !sharingBusy &&
+                            inviteCode.length == 6,
+                        onClick = {
+                            sharingBusy = true
+                            sharingMessage = null
+                            sharingScope.launch {
+                                runCatching {
+                                    cloudManager.getTripInvite(inviteCode)
+                                }.onSuccess {
+                                    activeInvite = it
+                                }.onFailure {
+                                    sharingMessage =
+                                        it.localizedMessage
+                                            ?: "הקוד אינו תקין"
+                                }
+                                sharingBusy = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("בדיקת הקוד") }
+
+                    activeInvite?.let { invite ->
+                        SectionCard(containerColor = SoftBlue) {
+                            Text(
+                                invite.tripName,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                            Text(invite.destination, color = TextSecondary)
+                            Text(
+                                "הזמנה מאת ${invite.createdByName}",
+                                color = TextSecondary
+                            )
+                            Button(
+                                enabled = !sharingBusy,
+                                onClick = {
+                                    val profile =
+                                        state.currentUser ?: return@Button
+                                    sharingBusy = true
+                                    sharingScope.launch {
+                                        runCatching {
+                                            cloudManager.acceptTripInvite(
+                                                invite,
+                                                profile
+                                            )
+                                        }.onSuccess { joined ->
+                                            onStateChange(
+                                                state.copy(
+                                                    trips = state.trips
+                                                        .filterNot {
+                                                            it.id == joined.id
+                                                        } + joined,
+                                                    currentTripId = joined.id
+                                                )
+                                            )
+                                            showJoinDialog = false
+                                            activeInvite = null
+                                        }.onFailure {
+                                            sharingMessage =
+                                                it.localizedMessage
+                                                    ?: "ההצטרפות נכשלה"
+                                        }
+                                        sharingBusy = false
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("אישור והצטרפות") }
+
+                            OutlinedButton(
+                                enabled = !sharingBusy,
+                                onClick = {
+                                    val profile =
+                                        state.currentUser
+                                            ?: return@OutlinedButton
+                                    sharingScope.launch {
+                                        runCatching {
+                                            cloudManager.declineTripInvite(
+                                                invite,
+                                                profile
+                                            )
+                                        }
+                                        showJoinDialog = false
+                                        activeInvite = null
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("דחייה") }
+                        }
+                    }
+
+                    sharingMessage?.let {
+                        Text(it, color = Coral)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showJoinDialog = false
+                        activeInvite = null
+                        sharingMessage = null
+                    }
+                ) { Text("סגירה") }
+            }
         )
     }
 
