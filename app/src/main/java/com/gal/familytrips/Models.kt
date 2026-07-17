@@ -194,13 +194,16 @@ data class CloudUserProfile(
 
 @Serializable
 data class TripInvite(
-    val code: String,
-    val tripId: String,
-    val tripName: String,
+    val code: String = "",
+    val tripId: String = "",
+    val tripName: String = "",
+    val destination: String = "",
     val role: String = "editor",
-    val createdBy: String,
-    val createdAt: Long,
-    val expiresAt: Long
+    val createdBy: String = "",
+    val createdByName: String = "",
+    val createdAt: Long = 0L,
+    val expiresAt: Long = 0L,
+    val status: String = "pending"
 )
 
 @Serializable
