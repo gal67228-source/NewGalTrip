@@ -128,7 +128,8 @@ class MainActivity : ComponentActivity() {
                     val next = local.copy(
                         trips = trips,
                         currentTripId = selected,
-                        currentUser = profile
+                        currentUser = profile,
+                        localMode = false
                     )
                     state = next
                     store.save(next)
@@ -149,10 +150,11 @@ class MainActivity : ComponentActivity() {
                         CircularProgressIndicator()
                     }
 
-                    state?.currentUser == null -> LoginScreen(
+                    state?.currentUser == null &&
+                        state?.localMode != true -> LoginScreen(
                         error = authError,
                         loading = authLoading,
-                        onSignIn = {
+                        onGoogleSignIn = {
                             authLoading = true
                             authError = null
                             composeScope.launch {
@@ -165,6 +167,16 @@ class MainActivity : ComponentActivity() {
                                         ?: "ההתחברות נכשלה"
                                 }
                                 authLoading = false
+                            }
+                        },
+                        onContinueLocally = {
+                            composeScope.launch {
+                                val local = store.load().copy(
+                                    currentUser = null,
+                                    localMode = true
+                                )
+                                store.save(local)
+                                state = local
                             }
                         }
                     )
@@ -220,7 +232,8 @@ class MainActivity : ComponentActivity() {
                             composeScope.launch {
                                 val local = store.load()
                                 val next = local.copy(
-                                    currentUser = null
+                                    currentUser = null,
+                                    localMode = false
                                 )
                                 store.save(next)
                                 state = next
@@ -298,188 +311,46 @@ class MainActivity : ComponentActivity() {
 private fun LoginScreen(
     error: String?,
     loading: Boolean,
-    onSignIn: () -> Unit
+    onGoogleSignIn: () -> Unit,
+    onContinueLocally: () -> Unit
 ) {
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFFE7F2FF),
-                        Color(0xFFF7FAFD),
-                        Color.White
-                    )
-                )
-            )
+        modifier = Modifier.fillMaxSize().background(
+            Brush.verticalGradient(listOf(Color(0xFFEAF4FF), Color(0xFFF8FAFC), Color.White))
+        )
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    horizontal = 28.dp,
-                    vertical = 32.dp
-                ),
-            horizontalAlignment =
-                Alignment.CenterHorizontally
+            modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 34.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.weight(0.65f))
-
-            Surface(
-                modifier = Modifier.size(94.dp),
-                shape = RoundedCornerShape(28.dp),
-                color = Navy,
-                shadowElevation = 10.dp
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Public,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(48.dp)
-                    )
+            Spacer(Modifier.weight(0.8f))
+            Surface(modifier = Modifier.size(96.dp), shape = RoundedCornerShape(30.dp), color = Navy, shadowElevation = 12.dp) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Public, null, tint = Color.White, modifier = Modifier.size(50.dp))
                 }
             }
-
-            Spacer(Modifier.height(22.dp))
-
-            Text(
-                "Gal Family Trips",
-                style =
-                    MaterialTheme.typography
-                        .headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = Navy
-            )
-
+            Spacer(Modifier.height(24.dp))
+            Text("FamilyGo", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Navy)
             Spacer(Modifier.height(8.dp))
-
-            Text(
-                "כל הטיולים, התכנונים והשינויים המשפחתיים במקום אחד",
-                textAlign = TextAlign.Center,
-                color = TextSecondary,
-                style =
-                    MaterialTheme.typography.bodyLarge
-            )
-
-            Spacer(Modifier.height(34.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                ),
-                elevation = CardDefaults.cardElevation(
-                    defaultElevation = 6.dp
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(22.dp),
-                    verticalArrangement =
-                        Arrangement.spacedBy(18.dp)
-                ) {
-                    Row(
-                        verticalAlignment =
-                            Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFF1F5F9)
-                        ) {
-                            Icon(
-                                Icons.Default.CloudSync,
-                                contentDescription = null,
-                                tint = Sky,
-                                modifier = Modifier.padding(10.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                "כניסה מאובטחת",
-                                fontWeight = FontWeight.Bold,
-                                color = Navy
-                            )
-                            Text(
-                                "הנתונים נטענים לפי חשבון Google שלך",
-                                color = TextSecondary,
-                                style =
-                                    MaterialTheme.typography
-                                        .bodySmall
-                            )
-                        }
+            Text("Plan together. Travel better.", textAlign = TextAlign.Center, color = TextSecondary, style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(38.dp))
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)) {
+                Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Button(onClick = onGoogleSignIn, enabled = !loading, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Navy), border = BorderStroke(1.dp, Color(0xFFD8DEE8))) {
+                        if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else { Text("G", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold); Spacer(Modifier.width(12.dp)); Text("המשך עם Google", fontWeight = FontWeight.Bold) }
                     }
-
-                    Button(
-                        onClick = onSignIn,
-                        enabled = !loading,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Navy,
-                            disabledContainerColor =
-                                Color(0xFFF3F4F6)
-                        ),
-                        border = BorderStroke(
-                            1.dp,
-                            Color(0xFFD8DEE8)
-                        )
-                    ) {
-                        if (loading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text(
-                                "G",
-                                color = Color(0xFF4285F4),
-                                fontWeight = FontWeight.Bold,
-                                style =
-                                    MaterialTheme.typography
-                                        .titleMedium
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                "המשך עם Google",
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        HorizontalDivider(modifier = Modifier.weight(1f)); Text("או", modifier = Modifier.padding(horizontal = 12.dp), color = TextSecondary); HorizontalDivider(modifier = Modifier.weight(1f))
                     }
-
-                    error?.let {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFFFF1F1)
-                        ) {
-                            Text(
-                                it,
-                                modifier = Modifier.padding(12.dp),
-                                color = Coral,
-                                style =
-                                    MaterialTheme.typography
-                                        .bodySmall
-                            )
-                        }
+                    OutlinedButton(onClick = onContinueLocally, enabled = !loading, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) {
+                        Icon(Icons.Default.PhoneAndroid, null); Spacer(Modifier.width(10.dp)); Text("המשך מקומית", fontWeight = FontWeight.Bold)
                     }
+                    error?.let { Text(it, color = Coral, style = MaterialTheme.typography.bodySmall) }
                 }
             }
-
             Spacer(Modifier.weight(1f))
-
-            Text(
-                "הכניסה מאפשרת גיבוי, סנכרון ושיתוף משפחתי",
-                textAlign = TextAlign.Center,
-                color = TextSecondary,
-                style =
-                    MaterialTheme.typography.labelMedium
-            )
+            Text("ניתן להתחבר לחשבון Google גם בהמשך דרך ההגדרות", textAlign = TextAlign.Center, color = TextSecondary, style = MaterialTheme.typography.labelMedium)
         }
     }
 }
@@ -1199,197 +1070,53 @@ fun GalTripsApp(
 
     if (showAccountDialog) {
         AlertDialog(
-            onDismissRequest = {
-                showAccountDialog = false
-            },
-            icon = {
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFFF1F5F9)
-                ) {
-                    Text(
-                        "G",
-                        modifier = Modifier.padding(
-                            horizontal = 14.dp,
-                            vertical = 9.dp
-                        ),
-                        color = Color(0xFF4285F4),
-                        fontWeight = FontWeight.Bold,
-                        style =
-                            MaterialTheme.typography
-                                .titleLarge
-                    )
-                }
-            },
-            title = {
-                Text("חשבון Google")
-            },
+            onDismissRequest = { showAccountDialog = false },
+            title = { Text(if (state.currentUser != null) "חשבון Google" else "מצב מקומי") },
             text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment =
-                        Alignment.CenterHorizontally,
-                    verticalArrangement =
-                        Arrangement.spacedBy(7.dp)
-                ) {
-                    Text(
-                        state.currentUser?.displayName
-                            ?: "משתמש",
-                        fontWeight = FontWeight.Bold,
-                        color = Navy
-                    )
-                    Text(
-                        state.currentUser?.email.orEmpty(),
-                        color = TextSecondary
-                    )
-                    Text(
-                        "${state.trips.size} טיולים מחוברים לחשבון",
-                        style =
-                            MaterialTheme.typography
-                                .bodySmall,
-                        color = TextSecondary
-                    )
+                Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(state.currentUser?.displayName ?: "משתמש מקומי", fontWeight = FontWeight.Bold, color = Navy)
+                    Text(state.currentUser?.email ?: "הנתונים נשמרים במכשיר", color = TextSecondary)
                 }
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showAccountDialog = false
-                    }
-                ) {
-                    Text("סגירה")
-                }
-            }
+            confirmButton = { Button(onClick = { showAccountDialog = false }) { Text("סגירה") } }
         )
     }
 
     if (showSettingsDialog) {
         AlertDialog(
-            onDismissRequest = {
-                showSettingsDialog = false
-            },
-            title = {
-                Text("הגדרות")
-            },
+            onDismissRequest = { showSettingsDialog = false },
+            title = { Text("הגדרות") },
             text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement =
-                        Arrangement.spacedBy(16.dp)
-                ) {
-                    SettingSwitchRow(
-                        title = "סנכרון אוטומטי",
-                        subtitle =
-                            "שליחת שינויים לענן באופן אוטומטי",
-                        checked =
-                            state.automaticSync,
-                        onCheckedChange = {
-                            onStateChange(
-                                state.copy(
-                                    automaticSync = it
-                                )
-                            )
-                        }
-                    )
-
-                    HorizontalDivider()
-
-                    SettingSwitchRow(
-                        title = "התראות",
-                        subtitle =
-                            "עדכונים ושינויים בטיול משותף",
-                        checked =
-                            state.notificationsEnabled,
-                        onCheckedChange = {
-                            onStateChange(
-                                state.copy(
-                                    notificationsEnabled =
-                                        it
-                                )
-                            )
-                        }
-                    )
-
-                    HorizontalDivider()
-
-                    Text(
-                        "מטבע מועדף",
-                        fontWeight = FontWeight.Bold,
-                        color = Navy
-                    )
-                    Row(
-                        horizontalArrangement =
-                            Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf("₪", "$", "€").forEach {
-                            currency ->
-                            FilterChip(
-                                selected =
-                                    state.preferredCurrency ==
-                                        currency,
-                                onClick = {
-                                    onStateChange(
-                                        state.copy(
-                                            preferredCurrency =
-                                                currency
-                                        )
-                                    )
-                                },
-                                label = {
-                                    Text(currency)
-                                }
-                            )
+                LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    item { Text("חשבון", fontWeight = FontWeight.Bold, color = Navy) }
+                    item {
+                        SectionCard(containerColor = SoftBlue) {
+                            Text(if (state.currentUser != null) "מחובר עם Google" else "מצב מקומי", fontWeight = FontWeight.Bold, color = Navy)
+                            Text(state.currentUser?.email ?: "הנתונים נשמרים במכשיר בלבד", color = TextSecondary)
                         }
                     }
-
-                    Text(
-                        "יחידות מרחק",
-                        fontWeight = FontWeight.Bold,
-                        color = Navy
-                    )
-                    Row(
-                        horizontalArrangement =
-                            Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf("ק״מ", "מייל").forEach {
-                            unit ->
-                            FilterChip(
-                                selected =
-                                    state.distanceUnit ==
-                                        unit,
-                                onClick = {
-                                    onStateChange(
-                                        state.copy(
-                                            distanceUnit =
-                                                unit
-                                        )
-                                    )
-                                },
-                                label = {
-                                    Text(unit)
-                                }
-                            )
+                    item { Text("סנכרון ושיתוף", fontWeight = FontWeight.Bold, color = Navy) }
+                    item { SettingSwitchRow("סנכרון אוטומטי", "שמירת שינויים בענן באופן אוטומטי", state.automaticSync && state.currentUser != null) { onStateChange(state.copy(automaticSync = it)) } }
+                    item { SettingSwitchRow("התראות", "עדכונים בטיול משותף", state.notificationsEnabled) { onStateChange(state.copy(notificationsEnabled = it)) } }
+                    item {
+                        SectionCard(containerColor = CardWhite) {
+                            Text("שיתוף משפחתי", fontWeight = FontWeight.Bold, color = Navy)
+                            Text(if (state.currentUser != null) "ניהול בני משפחה והרשאות" else "נדרש חשבון Google כדי לשתף טיולים", color = TextSecondary)
                         }
                     }
-
-                    Text(
-                        "גרסה ${BuildConfig.VERSION_NAME}",
-                        color = TextSecondary,
-                        style =
-                            MaterialTheme.typography
-                                .labelSmall
-                    )
+                    item { Text("העדפות", fontWeight = FontWeight.Bold, color = Navy) }
+                    item {
+                        Text("מטבע מועדף", color = Navy)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("₪", "$", "€").forEach { c -> FilterChip(selected = state.preferredCurrency == c, onClick = { onStateChange(state.copy(preferredCurrency = c)) }, label = { Text(c) }) } }
+                    }
+                    item {
+                        Text("יחידות מרחק", color = Navy)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("ק״מ", "מייל").forEach { u -> FilterChip(selected = state.distanceUnit == u, onClick = { onStateChange(state.copy(distanceUnit = u)) }, label = { Text(u) }) } }
+                    }
+                    item { Text("גרסה ${BuildConfig.VERSION_NAME}", color = TextSecondary, style = MaterialTheme.typography.labelSmall) }
                 }
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showSettingsDialog = false
-                    }
-                ) {
-                    Text("שמירה וסגירה")
-                }
-            }
+            confirmButton = { Button(onClick = { showSettingsDialog = false }) { Text("שמירה וסגירה") } }
         )
     }
 
@@ -2659,255 +2386,6 @@ private fun TripsScreen(
             }
         }
 
-        item {
-            SectionCard(containerColor = SoftBlue) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            "שיתוף משפחתי בענן",
-                            fontWeight = FontWeight.Bold,
-                            color = Navy
-                        )
-                        Text(
-                            when {
-                                state.currentUser == null ->
-                                    "נדרשת התחברות עם Google"
-                                currentTrip.cloudEnabled ->
-                                    "הטיול מסונכרן עם Firestore"
-                                else ->
-                                    "החשבון מחובר · הטיול עדיין מקומי"
-                            },
-                            style =
-                                MaterialTheme.typography.bodySmall,
-                            color = TextSecondary
-                        )
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (
-                            currentTrip.cloudEnabled
-                        ) {
-                            SoftMint
-                        } else {
-                            SoftSun
-                        }
-                    ) {
-                        Text(
-                            if (currentTrip.cloudEnabled) {
-                                "מסונכרן"
-                            } else {
-                                "מקומי"
-                            },
-                            modifier = Modifier.padding(
-                                horizontal = 9.dp,
-                                vertical = 5.dp
-                            ),
-                            fontWeight = FontWeight.Bold,
-                            color = if (
-                                currentTrip.cloudEnabled
-                            ) {
-                                Color(0xFF2E7D56)
-                            } else {
-                                Color(0xFF8F6500)
-                            }
-                        )
-                    }
-                }
-
-                state.currentUser?.let { user ->
-                    Text(
-                        "מחובר: ${user.displayName}",
-                        style =
-                            MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                    if (user.email.isNotBlank()) {
-                        Text(
-                            user.email,
-                            style =
-                                MaterialTheme.typography.labelSmall,
-                            color = TextSecondary
-                        )
-                    }
-                }
-
-                when {
-                    state.currentUser == null -> {
-                        Button(
-                            enabled = !cloudBusy,
-                            onClick = {
-                                cloudBusy = true
-                                cloudScope.launch {
-                                    runCatching {
-                                        cloudManager
-                                            .signInWithGoogle()
-                                    }.onSuccess { profile ->
-                                        onStateChange(
-                                            state.copy(
-                                                currentUser =
-                                                    profile
-                                            )
-                                        )
-                                        cloudMessage =
-                                            "ההתחברות הצליחה"
-                                    }.onFailure {
-                                        cloudMessage =
-                                            it.localizedMessage
-                                                ?: "ההתחברות נכשלה"
-                                    }
-                                    cloudBusy = false
-                                }
-                            },
-                            modifier =
-                                Modifier.fillMaxWidth(),
-                            shape =
-                                RoundedCornerShape(14.dp)
-                        ) {
-                            if (cloudBusy) {
-                                CircularProgressIndicator(
-                                    modifier =
-                                        Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(
-                                    Modifier.width(8.dp)
-                                )
-                            }
-                            Text("התחברות עם Google")
-                        }
-                    }
-
-                    !currentTrip.cloudEnabled -> {
-                        Button(
-                            enabled = !cloudBusy,
-                            onClick = {
-                                val profile =
-                                    state.currentUser
-                                        ?: return@Button
-                                cloudBusy = true
-                                cloudScope.launch {
-                                    runCatching {
-                                        cloudManager.uploadTrip(
-                                            currentTrip,
-                                            profile
-                                        )
-                                    }.onSuccess {
-                                        uploaded ->
-                                        onStateChange(
-                                            state.replaceTrip(
-                                                uploaded
-                                            )
-                                        )
-                                        cloudMessage =
-                                            "הטיול הועלה לענן"
-                                    }.onFailure {
-                                        cloudMessage =
-                                            it.localizedMessage
-                                                ?: "העלאת הטיול נכשלה"
-                                    }
-                                    cloudBusy = false
-                                }
-                            },
-                            modifier =
-                                Modifier.fillMaxWidth(),
-                            shape =
-                                RoundedCornerShape(14.dp)
-                        ) {
-                            if (cloudBusy) {
-                                CircularProgressIndicator(
-                                    modifier =
-                                        Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(
-                                    Modifier.width(8.dp)
-                                )
-                            }
-                            Text("הפעלת סנכרון לטיול")
-                        }
-                    }
-
-                    else -> {
-                        Text(
-                            "עדכונים ממכשיר אחר יופיעו אוטומטית. שינויים מקומיים יישמרו בענן בשלבי הסנכרון הבאים.",
-                            style =
-                                MaterialTheme.typography.labelSmall,
-                            color = Sky
-                        )
-
-                        OutlinedButton(
-                            onClick = {
-                                val profile =
-                                    state.currentUser
-                                        ?: return@OutlinedButton
-                                cloudBusy = true
-                                cloudScope.launch {
-                                    runCatching {
-                                        cloudManager.uploadTrip(
-                                            currentTrip,
-                                            profile
-                                        )
-                                    }.onSuccess {
-                                        uploaded ->
-                                        onStateChange(
-                                            state.replaceTrip(
-                                                uploaded
-                                            )
-                                        )
-                                        cloudMessage =
-                                            "הסנכרון הושלם"
-                                    }.onFailure {
-                                        cloudMessage =
-                                            it.localizedMessage
-                                                ?: "הסנכרון נכשל"
-                                    }
-                                    cloudBusy = false
-                                }
-                            },
-                            enabled = !cloudBusy,
-                            modifier =
-                                Modifier.fillMaxWidth(),
-                            shape =
-                                RoundedCornerShape(14.dp)
-                        ) {
-                            Text("סנכרן עכשיו")
-                        }
-                    }
-                }
-
-                if (state.currentUser != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showFamilyDialog = true },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("בני משפחה") }
-                        OutlinedButton(
-                            onClick = { showJoinDialog = true },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("הצטרפות בקוד") }
-                    }
-                }
-
-                cloudMessage?.let {
-                    Text(
-                        it,
-                        style =
-                            MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                }
-            }
-        }
 
         item {
             SectionCard(

@@ -220,5 +220,6 @@ data class AppState(
     val automaticSync: Boolean = true,
     val notificationsEnabled: Boolean = true,
     val preferredCurrency: String = "₪",
-    val distanceUnit: String = "ק״מ"
+    val distanceUnit: String = "ק״מ",
+    val localMode: Boolean = false
 )
