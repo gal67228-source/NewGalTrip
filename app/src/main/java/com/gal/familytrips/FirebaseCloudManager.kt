@@ -575,4 +575,236 @@ class FirebaseCloudManager(
             .await()
     }
 
+    suspend fun getTripMembers(
+        tripId: String
+    ): List<ManagedTripMember> {
+        val tripSnapshot = firestore.collection("trips")
+            .document(tripId)
+            .get()
+            .await()
+
+        if (!tripSnapshot.exists()) {
+            error("הטיול אינו קיים")
+        }
+
+        val ownerId =
+            tripSnapshot.getString("ownerUserId")
+                .orEmpty()
+
+        val memberIds =
+            (tripSnapshot.get("memberIds") as? List<*>)
+                ?.filterIsInstance<String>()
+                .orEmpty()
+
+        val editorIds =
+            (tripSnapshot.get("editorIds") as? List<*>)
+                ?.filterIsInstance<String>()
+                .toSet()
+
+        val memberDocs = firestore.collection("trips")
+            .document(tripId)
+            .collection("members")
+            .get()
+            .await()
+            .documents
+            .associateBy { it.id }
+
+        return memberIds.distinct().map { userId ->
+            val memberDoc = memberDocs[userId]
+            ManagedTripMember(
+                userId = userId,
+                displayName = memberDoc
+                    ?.getString("displayName")
+                    .orEmpty(),
+                email = memberDoc
+                    ?.getString("email")
+                    .orEmpty(),
+                role = when {
+                    userId == ownerId -> "owner"
+                    userId in editorIds -> "editor"
+                    else -> "viewer"
+                },
+                joinedAt = memberDoc
+                    ?.getLong("joinedAt")
+                    ?: 0L,
+                invitedBy = memberDoc
+                    ?.getString("invitedBy")
+                    .orEmpty()
+            )
+        }.sortedWith(
+            compareBy<ManagedTripMember> {
+                when (it.role) {
+                    "owner" -> 0
+                    "editor" -> 1
+                    else -> 2
+                }
+            }.thenBy { it.displayName.ifBlank { it.email } }
+        )
+    }
+
+    suspend fun getPendingTripInvites(
+        tripId: String
+    ): List<PendingTripInvite> {
+        val snapshot = firestore.collection("tripInvites")
+            .whereEqualTo("tripId", tripId)
+            .whereEqualTo("status", "pending")
+            .get()
+            .await()
+
+        return snapshot.documents.mapNotNull { document ->
+            document.toObject(
+                PendingTripInvite::class.java
+            )
+        }.filter {
+            it.expiresAt >
+                System.currentTimeMillis()
+        }.sortedByDescending { it.createdAt }
+    }
+
+    suspend fun updateTripMemberRole(
+        tripId: String,
+        memberUserId: String,
+        newRole: String,
+        currentUser: CloudUserProfile
+    ) {
+        require(newRole in setOf("editor", "viewer")) {
+            "הרשאה לא תקינה"
+        }
+
+        val tripRef = firestore.collection("trips")
+            .document(tripId)
+        val memberRef = tripRef.collection("members")
+            .document(memberUserId)
+
+        firestore.runTransaction { transaction ->
+            val snapshot = transaction.get(tripRef)
+            val ownerId = snapshot
+                .getString("ownerUserId")
+                .orEmpty()
+
+            if (ownerId != currentUser.userId) {
+                error("רק בעל הטיול יכול לשנות הרשאות")
+            }
+            if (memberUserId == ownerId) {
+                error("לא ניתן לשנות את הרשאת בעל הטיול")
+            }
+
+            val editorIds =
+                (snapshot.get("editorIds") as? List<*>)
+                    ?.filterIsInstance<String>()
+                    ?.toMutableSet()
+                    ?: mutableSetOf()
+
+            if (newRole == "editor") {
+                editorIds += memberUserId
+            } else {
+                editorIds -= memberUserId
+            }
+
+            transaction.update(
+                tripRef,
+                mapOf(
+                    "editorIds" to editorIds.toList(),
+                    "updatedAt" to System.currentTimeMillis(),
+                    "updatedBy" to currentUser.userId
+                )
+            )
+            transaction.set(
+                memberRef,
+                mapOf(
+                    "role" to newRole,
+                    "updatedAt" to System.currentTimeMillis(),
+                    "updatedBy" to currentUser.userId
+                ),
+                com.google.firebase.firestore.SetOptions.merge()
+            )
+        }.await()
+    }
+
+    suspend fun removeTripMember(
+        tripId: String,
+        memberUserId: String,
+        currentUser: CloudUserProfile
+    ) {
+        val tripRef = firestore.collection("trips")
+            .document(tripId)
+        val memberRef = tripRef.collection("members")
+            .document(memberUserId)
+
+        firestore.runTransaction { transaction ->
+            val snapshot = transaction.get(tripRef)
+            val ownerId = snapshot
+                .getString("ownerUserId")
+                .orEmpty()
+
+            if (ownerId != currentUser.userId) {
+                error("רק בעל הטיול יכול להסיר חברים")
+            }
+            if (memberUserId == ownerId) {
+                error("לא ניתן להסיר את בעל הטיול")
+            }
+
+            val memberIds =
+                (snapshot.get("memberIds") as? List<*>)
+                    ?.filterIsInstance<String>()
+                    ?.toMutableSet()
+                    ?: mutableSetOf()
+
+            val editorIds =
+                (snapshot.get("editorIds") as? List<*>)
+                    ?.filterIsInstance<String>()
+                    ?.toMutableSet()
+                    ?: mutableSetOf()
+
+            memberIds -= memberUserId
+            editorIds -= memberUserId
+
+            transaction.update(
+                tripRef,
+                mapOf(
+                    "memberIds" to memberIds.toList(),
+                    "editorIds" to editorIds.toList(),
+                    "updatedAt" to System.currentTimeMillis(),
+                    "updatedBy" to currentUser.userId
+                )
+            )
+            transaction.delete(memberRef)
+        }.await()
+    }
+
+    suspend fun cancelTripInvite(
+        inviteCode: String,
+        currentUser: CloudUserProfile
+    ) {
+        val inviteRef = firestore.collection("tripInvites")
+            .document(inviteCode)
+
+        firestore.runTransaction { transaction ->
+            val snapshot = transaction.get(inviteRef)
+            if (!snapshot.exists()) {
+                error("ההזמנה אינה קיימת")
+            }
+
+            val createdBy = snapshot
+                .getString("createdBy")
+                .orEmpty()
+
+            if (createdBy != currentUser.userId) {
+                error("רק יוצר ההזמנה יכול לבטל אותה")
+            }
+
+            transaction.update(
+                inviteRef,
+                mapOf(
+                    "status" to "cancelled",
+                    "cancelledAt" to
+                        System.currentTimeMillis(),
+                    "cancelledBy" to
+                        currentUser.userId
+                )
+            )
+        }.await()
+    }
+
+
 }

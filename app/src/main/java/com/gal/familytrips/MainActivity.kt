@@ -624,6 +624,25 @@ fun GalTripsApp(
     var showJoinDialog by remember {
         mutableStateOf(false)
     }
+    var showFamilyManagement by remember {
+        mutableStateOf(false)
+    }
+    var familyMembers by remember {
+        mutableStateOf<List<ManagedTripMember>>(
+            emptyList()
+        )
+    }
+    var pendingInvites by remember {
+        mutableStateOf<List<PendingTripInvite>>(
+            emptyList()
+        )
+    }
+    var familyLoading by remember {
+        mutableStateOf(false)
+    }
+    var familyMessage by remember {
+        mutableStateOf<String?>(null)
+    }
     var sharingBusy by remember {
         mutableStateOf(false)
     }
@@ -634,6 +653,39 @@ fun GalTripsApp(
         mutableStateOf<TripInvite?>(null)
     }
     val sharingScope = rememberCoroutineScope()
+
+    LaunchedEffect(
+        showFamilyManagement,
+        trip.id
+    ) {
+        if (
+            showFamilyManagement &&
+            state.currentUser != null
+        ) {
+            familyLoading = true
+            familyMessage = null
+            runCatching {
+                val members =
+                    cloudManager.getTripMembers(
+                        trip.id
+                    )
+                val invites =
+                    cloudManager.getPendingTripInvites(
+                        trip.id
+                    )
+                members to invites
+            }.onSuccess {
+                (members, invites) ->
+                familyMembers = members
+                pendingInvites = invites
+            }.onFailure {
+                familyMessage =
+                    it.localizedMessage
+                        ?: "טעינת בני המשפחה נכשלה"
+            }
+            familyLoading = false
+        }
+    }
 
     LaunchedEffect(incomingInviteCode) {
         val code = incomingInviteCode
@@ -938,6 +990,23 @@ fun GalTripsApp(
                             )
 
                             DropdownMenuItem(
+                                text = {
+                                    Text("ניהול בני משפחה")
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.ManageAccounts,
+                                        null
+                                    )
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    showFamilyManagement =
+                                        true
+                                }
+                            )
+
+                            DropdownMenuItem(
                                 text = { Text("הגדרות") },
                                 leadingIcon = {
                                     Icon(Icons.Default.Settings, null)
@@ -1212,6 +1281,435 @@ fun GalTripsApp(
                 }
             },
             confirmButton = { Button(onClick = { showSettingsDialog = false }) { Text("שמירה וסגירה") } }
+        )
+    }
+
+    if (showFamilyManagement) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!familyLoading) {
+                    showFamilyManagement = false
+                    familyMessage = null
+                }
+            },
+            title = {
+                Text("בני המשפחה בטיול")
+            },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement =
+                        Arrangement.spacedBy(14.dp)
+                ) {
+                    item {
+                        Text(
+                            trip.name,
+                            fontWeight = FontWeight.Bold,
+                            color = Navy
+                        )
+                        Text(
+                            trip.destination,
+                            color = TextSecondary
+                        )
+                    }
+
+                    if (state.currentUser == null) {
+                        item {
+                            Text(
+                                "יש להתחבר עם Google כדי לנהל שיתוף.",
+                                color = TextSecondary
+                            )
+                        }
+                    } else {
+                        item {
+                            Button(
+                                onClick = {
+                                    showFamilyManagement =
+                                        false
+                                    showSharingDialog = true
+                                },
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    Icons.Default.PersonAdd,
+                                    null
+                                )
+                                Spacer(
+                                    Modifier.width(8.dp)
+                                )
+                                Text("הזמנת בן משפחה")
+                            }
+                        }
+
+                        item {
+                            Text(
+                                "חברים",
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                        }
+
+                        if (
+                            familyMembers.isEmpty() &&
+                            !familyLoading
+                        ) {
+                            item {
+                                Text(
+                                    "עדיין אין חברים נוספים בטיול.",
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+
+                        items(
+                            familyMembers,
+                            key = { it.userId }
+                        ) { member ->
+                            SectionCard(
+                                containerColor =
+                                    CardWhite
+                            ) {
+                                Row(
+                                    modifier =
+                                        Modifier.fillMaxWidth(),
+                                    verticalAlignment =
+                                        Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = SoftBlue
+                                    ) {
+                                        Text(
+                                            (
+                                                member.displayName
+                                                    .ifBlank {
+                                                        member.email
+                                                    }
+                                                    .firstOrNull()
+                                                    ?.uppercase()
+                                                    ?: "?"
+                                            ),
+                                            modifier =
+                                                Modifier.padding(
+                                                    horizontal =
+                                                        12.dp,
+                                                    vertical =
+                                                        8.dp
+                                                ),
+                                            fontWeight =
+                                                FontWeight.Bold,
+                                            color = Navy
+                                        )
+                                    }
+
+                                    Spacer(
+                                        Modifier.width(12.dp)
+                                    )
+
+                                    Column(
+                                        modifier =
+                                            Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            member.displayName
+                                                .ifBlank {
+                                                    member.email
+                                                },
+                                            fontWeight =
+                                                FontWeight.Bold,
+                                            color = Navy
+                                        )
+                                        if (
+                                            member.email
+                                                .isNotBlank()
+                                        ) {
+                                            Text(
+                                                member.email,
+                                                color =
+                                                    TextSecondary,
+                                                style =
+                                                    MaterialTheme
+                                                        .typography
+                                                        .bodySmall
+                                            )
+                                        }
+                                        Text(
+                                            when (
+                                                member.role
+                                            ) {
+                                                "owner" ->
+                                                    "בעלים"
+                                                "editor" ->
+                                                    "עורך"
+                                                else ->
+                                                    "צופה"
+                                            },
+                                            color =
+                                                TextSecondary,
+                                            style =
+                                                MaterialTheme
+                                                    .typography
+                                                    .labelSmall
+                                        )
+                                    }
+                                }
+
+                                if (
+                                    member.role != "owner" &&
+                                    trip.ownerUserId ==
+                                        state.currentUser
+                                            .userId
+                                ) {
+                                    Row(
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        horizontalArrangement =
+                                            Arrangement.spacedBy(
+                                                8.dp
+                                            )
+                                    ) {
+                                        FilterChip(
+                                            selected =
+                                                member.role ==
+                                                    "editor",
+                                            onClick = {
+                                                familyLoading =
+                                                    true
+                                                sharingScope.launch {
+                                                    runCatching {
+                                                        cloudManager
+                                                            .updateTripMemberRole(
+                                                                trip.id,
+                                                                member.userId,
+                                                                "editor",
+                                                                state.currentUser
+                                                            )
+                                                    }.onSuccess {
+                                                        familyMembers =
+                                                            cloudManager
+                                                                .getTripMembers(
+                                                                    trip.id
+                                                                )
+                                                    }.onFailure {
+                                                        familyMessage =
+                                                            it.localizedMessage
+                                                    }
+                                                    familyLoading =
+                                                        false
+                                                }
+                                            },
+                                            label = {
+                                                Text("עורך")
+                                            }
+                                        )
+
+                                        FilterChip(
+                                            selected =
+                                                member.role ==
+                                                    "viewer",
+                                            onClick = {
+                                                familyLoading =
+                                                    true
+                                                sharingScope.launch {
+                                                    runCatching {
+                                                        cloudManager
+                                                            .updateTripMemberRole(
+                                                                trip.id,
+                                                                member.userId,
+                                                                "viewer",
+                                                                state.currentUser
+                                                            )
+                                                    }.onSuccess {
+                                                        familyMembers =
+                                                            cloudManager
+                                                                .getTripMembers(
+                                                                    trip.id
+                                                                )
+                                                    }.onFailure {
+                                                        familyMessage =
+                                                            it.localizedMessage
+                                                    }
+                                                    familyLoading =
+                                                        false
+                                                }
+                                            },
+                                            label = {
+                                                Text("צופה")
+                                            }
+                                        )
+
+                                        TextButton(
+                                            onClick = {
+                                                familyLoading =
+                                                    true
+                                                sharingScope.launch {
+                                                    runCatching {
+                                                        cloudManager
+                                                            .removeTripMember(
+                                                                trip.id,
+                                                                member.userId,
+                                                                state.currentUser
+                                                            )
+                                                    }.onSuccess {
+                                                        familyMembers =
+                                                            cloudManager
+                                                                .getTripMembers(
+                                                                    trip.id
+                                                                )
+                                                    }.onFailure {
+                                                        familyMessage =
+                                                            it.localizedMessage
+                                                    }
+                                                    familyLoading =
+                                                        false
+                                                }
+                                            }
+                                        ) {
+                                            Text(
+                                                "הסרה",
+                                                color = Coral
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+                            Text(
+                                "הזמנות ממתינות",
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                        }
+
+                        if (
+                            pendingInvites.isEmpty() &&
+                            !familyLoading
+                        ) {
+                            item {
+                                Text(
+                                    "אין הזמנות ממתינות.",
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+
+                        items(
+                            pendingInvites,
+                            key = { it.code }
+                        ) { invite ->
+                            SectionCard(
+                                containerColor =
+                                    SoftBlue
+                            ) {
+                                Text(
+                                    "קוד ${invite.code}",
+                                    fontWeight =
+                                        FontWeight.Bold,
+                                    color = Navy
+                                )
+                                Text(
+                                    if (
+                                        invite.role ==
+                                            "editor"
+                                    ) {
+                                        "הרשאת עורך"
+                                    } else {
+                                        "הרשאת צפייה"
+                                    },
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    "נוצר על ידי ${invite.createdByName}",
+                                    color = TextSecondary,
+                                    style =
+                                        MaterialTheme
+                                            .typography
+                                            .bodySmall
+                                )
+
+                                if (
+                                    trip.ownerUserId ==
+                                        state.currentUser
+                                            .userId
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            familyLoading =
+                                                true
+                                            sharingScope.launch {
+                                                runCatching {
+                                                    cloudManager
+                                                        .cancelTripInvite(
+                                                            invite.code,
+                                                            state.currentUser
+                                                        )
+                                                }.onSuccess {
+                                                    pendingInvites =
+                                                        cloudManager
+                                                            .getPendingTripInvites(
+                                                                trip.id
+                                                            )
+                                                }.onFailure {
+                                                    familyMessage =
+                                                        it.localizedMessage
+                                                }
+                                                familyLoading =
+                                                    false
+                                            }
+                                        },
+                                        modifier =
+                                            Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            "ביטול הזמנה",
+                                            color = Coral
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (familyLoading) {
+                        item {
+                            Box(
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                contentAlignment =
+                                    Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
+
+                    familyMessage?.let {
+                        item {
+                            Text(
+                                it,
+                                color = Coral,
+                                style =
+                                    MaterialTheme
+                                        .typography
+                                        .bodySmall
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showFamilyManagement = false
+                        familyMessage = null
+                    }
+                ) {
+                    Text("סגירה")
+                }
+            }
         )
     }
 

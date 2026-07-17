@@ -12,56 +12,90 @@ service cloud.firestore {
       );
     }
 
+    function isOwner(tripId) {
+      return signedIn()
+        && request.auth.uid
+          == tripDoc(tripId).data.ownerUserId;
+    }
+
     function isMember(tripId) {
       return signedIn()
-        && request.auth.uid in tripDoc(tripId).data.memberIds;
+        && request.auth.uid
+          in tripDoc(tripId).data.memberIds;
     }
 
     function isEditor(tripId) {
       return signedIn()
-        && request.auth.uid in tripDoc(tripId).data.editorIds;
+        && request.auth.uid
+          in tripDoc(tripId).data.editorIds;
     }
 
     match /trips/{tripId} {
       allow create: if signedIn()
-        && request.resource.data.ownerUserId == request.auth.uid;
-
-      allow read: if signedIn()
-        && request.auth.uid in resource.data.memberIds;
-
-      allow update: if signedIn()
-        && (
-          request.auth.uid in resource.data.editorIds
-          || (
-            request.auth.uid in request.resource.data.memberIds
-            && !(request.auth.uid in resource.data.memberIds)
-          )
-        )
         && request.resource.data.ownerUserId
-          == resource.data.ownerUserId;
+          == request.auth.uid;
 
-      allow delete: if signedIn()
-        && request.auth.uid == resource.data.ownerUserId;
+      allow read: if isMember(tripId);
+
+      allow update: if isOwner(tripId)
+        || (
+          isEditor(tripId)
+          && request.resource.data.ownerUserId
+            == resource.data.ownerUserId
+          && request.resource.data.memberIds
+            == resource.data.memberIds
+          && request.resource.data.editorIds
+            == resource.data.editorIds
+        )
+        || (
+          signedIn()
+          && request.auth.uid
+            in request.resource.data.memberIds
+          && !(request.auth.uid
+            in resource.data.memberIds)
+          && request.resource.data.ownerUserId
+            == resource.data.ownerUserId
+        );
+
+      allow delete: if isOwner(tripId);
 
       match /members/{memberId} {
         allow read: if isMember(tripId);
-        allow write: if signedIn()
-          && request.auth.uid == tripDoc(tripId).data.ownerUserId;
+        allow create, update, delete:
+          if isOwner(tripId)
+          || (
+            signedIn()
+            && memberId == request.auth.uid
+          );
       }
 
       match /{collectionName}/{documentId} {
         allow read: if isMember(tripId);
-        allow create, update, delete: if isEditor(tripId);
+        allow create, update, delete:
+          if isEditor(tripId);
       }
     }
 
     match /tripInvites/{code} {
       allow read: if signedIn();
+
       allow create: if signedIn()
-        && request.resource.data.createdBy == request.auth.uid;
-      allow update: if signedIn();
+        && request.resource.data.createdBy
+          == request.auth.uid;
+
+      allow update: if signedIn()
+        && (
+          resource.data.createdBy
+            == request.auth.uid
+          || request.resource.data.acceptedBy
+            == request.auth.uid
+          || request.resource.data.declinedBy
+            == request.auth.uid
+        );
+
       allow delete: if signedIn()
-        && resource.data.createdBy == request.auth.uid;
+        && resource.data.createdBy
+          == request.auth.uid;
     }
   }
 }
