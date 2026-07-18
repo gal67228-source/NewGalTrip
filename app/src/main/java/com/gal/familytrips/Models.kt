@@ -184,7 +184,6 @@ data class TripMember(
 )
 
 @Serializable
-@kotlinx.serialization.Serializable
 data class ManagedTripMember(
     val userId: String = "",
     val displayName: String = "",
@@ -194,7 +193,7 @@ data class ManagedTripMember(
     val invitedBy: String = ""
 )
 
-@kotlinx.serialization.Serializable
+@Serializable
 data class PendingTripInvite(
     val code: String = "",
     val tripId: String = "",
@@ -208,7 +207,7 @@ data class PendingTripInvite(
     val status: String = "pending"
 )
 
-@kotlinx.serialization.Serializable
+@Serializable
 data class CloudUserProfile(
     val userId: String,
     val displayName: String,
