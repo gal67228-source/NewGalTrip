@@ -69,6 +69,12 @@ service cloud.firestore {
           );
       }
 
+      match /activityFeed/{eventId} {
+        allow read: if isMember(tripId);
+        allow create: if isEditor(tripId);
+        allow update, delete: if false;
+      }
+
       match /{collectionName}/{documentId} {
         allow read: if isMember(tripId);
         allow create, update, delete:

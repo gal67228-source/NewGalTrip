@@ -627,6 +627,20 @@ fun GalTripsApp(
     var showFamilyManagement by remember {
         mutableStateOf(false)
     }
+    var showActivityFeed by remember {
+        mutableStateOf(false)
+    }
+    var activityFeed by remember {
+        mutableStateOf<List<TripActivityEvent>>(
+            emptyList()
+        )
+    }
+    var activityFeedLoading by remember {
+        mutableStateOf(false)
+    }
+    var activityFeedFilter by remember {
+        mutableStateOf("all")
+    }
     var familyMembers by remember {
         mutableStateOf<List<ManagedTripMember>>(
             emptyList()
@@ -665,6 +679,27 @@ fun GalTripsApp(
     val trip = state.trips.firstOrNull {
         it.id == state.currentTripId
     } ?: state.trips.first()
+
+    LaunchedEffect(
+        showActivityFeed,
+        trip.id
+    ) {
+        if (showActivityFeed) {
+            activityFeedLoading = true
+            runCatching {
+                cloudManager.getActivityFeed(
+                    trip.id
+                )
+            }.onSuccess {
+                activityFeed = it
+            }.onFailure {
+                familyMessage =
+                    it.localizedMessage
+                        ?: "טעינת היסטוריית השינויים נכשלה"
+            }
+            activityFeedLoading = false
+        }
+    }
 
     LaunchedEffect(
         showFamilyManagement,
@@ -1007,6 +1042,22 @@ fun GalTripsApp(
                             )
 
                             DropdownMenuItem(
+                                text = {
+                                    Text("היסטוריית שינויים")
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.History,
+                                        null
+                                    )
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    showActivityFeed = true
+                                }
+                            )
+
+                            DropdownMenuItem(
                                 text = { Text("הגדרות") },
                                 leadingIcon = {
                                     Icon(Icons.Default.Settings, null)
@@ -1281,6 +1332,158 @@ fun GalTripsApp(
                 }
             },
             confirmButton = { Button(onClick = { showSettingsDialog = false }) { Text("שמירה וסגירה") } }
+        )
+    }
+
+    if (showActivityFeed) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!activityFeedLoading) {
+                    showActivityFeed = false
+                }
+            },
+            title = {
+                Text("היסטוריית שינויים")
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement =
+                        Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        horizontalArrangement =
+                            Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "all" to "הכול",
+                            "create" to "נוספו",
+                            "update" to "עודכנו",
+                            "delete" to "נמחקו"
+                        ).forEach { pair ->
+                            FilterChip(
+                                selected =
+                                    activityFeedFilter ==
+                                        pair.first,
+                                onClick = {
+                                    activityFeedFilter =
+                                        pair.first
+                                },
+                                label = {
+                                    Text(pair.second)
+                                }
+                            )
+                        }
+                    }
+
+                    val visibleEvents =
+                        if (
+                            activityFeedFilter ==
+                                "all"
+                        ) {
+                            activityFeed
+                        } else {
+                            activityFeed.filter {
+                                it.type ==
+                                    activityFeedFilter
+                            }
+                        }
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 460.dp),
+                        verticalArrangement =
+                            Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (
+                            visibleEvents.isEmpty() &&
+                            !activityFeedLoading
+                        ) {
+                            item {
+                                Text(
+                                    "עדיין אין שינויים להצגה.",
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+
+                        items(
+                            visibleEvents,
+                            key = { it.id }
+                        ) { event ->
+                            SectionCard(
+                                containerColor =
+                                    CardWhite
+                            ) {
+                                Text(
+                                    event.title,
+                                    fontWeight =
+                                        FontWeight.Bold,
+                                    color = Navy
+                                )
+                                if (
+                                    event.description
+                                        .isNotBlank()
+                                ) {
+                                    Text(
+                                        event.description,
+                                        color =
+                                            TextSecondary
+                                    )
+                                }
+                                Text(
+                                    event.userName
+                                        .ifBlank {
+                                            "משתמש"
+                                        },
+                                    style =
+                                        MaterialTheme
+                                            .typography
+                                            .bodySmall,
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    java.text.SimpleDateFormat(
+                                        "dd/MM/yyyy HH:mm",
+                                        java.util.Locale
+                                            .getDefault()
+                                    ).format(
+                                        java.util.Date(
+                                            event.createdAt
+                                        )
+                                    ),
+                                    style =
+                                        MaterialTheme
+                                            .typography
+                                            .labelSmall,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
+
+                    if (activityFeedLoading) {
+                        Box(
+                            modifier =
+                                Modifier.fillMaxWidth(),
+                            contentAlignment =
+                                Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showActivityFeed = false
+                    }
+                ) {
+                    Text("סגירה")
+                }
+            }
         )
     }
 

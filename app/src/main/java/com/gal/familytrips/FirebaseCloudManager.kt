@@ -808,4 +808,38 @@ class FirebaseCloudManager(
     }
 
 
+    suspend fun addActivityEvent(
+        event: TripActivityEvent
+    ) {
+        firestore.collection("trips")
+            .document(event.tripId)
+            .collection("activityFeed")
+            .document(event.id)
+            .set(event)
+            .await()
+    }
+
+    suspend fun getActivityFeed(
+        tripId: String
+    ): List<TripActivityEvent> {
+        return firestore.collection("trips")
+            .document(tripId)
+            .collection("activityFeed")
+            .orderBy(
+                "createdAt",
+                com.google.firebase.firestore.Query
+                    .Direction.DESCENDING
+            )
+            .limit(100)
+            .get()
+            .await()
+            .documents
+            .mapNotNull {
+                it.toObject(
+                    TripActivityEvent::class.java
+                )
+            }
+    }
+
+
 }

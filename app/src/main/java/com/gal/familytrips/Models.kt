@@ -184,6 +184,20 @@ data class TripMember(
 )
 
 @Serializable
+@Serializable
+data class TripActivityEvent(
+    val id: String = "",
+    val tripId: String = "",
+    val type: String = "",
+    val entityType: String = "",
+    val entityId: String = "",
+    val title: String = "",
+    val description: String = "",
+    val userId: String = "",
+    val userName: String = "",
+    val createdAt: Long = 0L
+)
+
 data class ManagedTripMember(
     val userId: String = "",
     val displayName: String = "",
