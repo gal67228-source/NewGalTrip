@@ -278,6 +278,7 @@ data class PendingSyncOperation(
     val lastError: String = ""
 )
 
+@Serializable
 data class AppState(
     val trips: List<Trip>,
     val currentTripId: String,

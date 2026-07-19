@@ -748,140 +748,7 @@ fun GalTripsApp(
         showActivityFeed,
         trip.id
     ) {
-        if (showNotifications) {
-        AlertDialog(
-            onDismissRequest = {
-                if (!notificationsLoading) {
-                    showNotifications = false
-                }
-            },
-            title = {
-                Text("התראות")
-            },
-            text = {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 480.dp),
-                    verticalArrangement =
-                        Arrangement.spacedBy(10.dp)
-                ) {
-                    if (
-                        notifications.isEmpty() &&
-                        !notificationsLoading
-                    ) {
-                        item {
-                            Text(
-                                "אין התראות חדשות.",
-                                color = TextSecondary
-                            )
-                        }
-                    }
-
-                    items(
-                        notifications,
-                        key = { it.id }
-                    ) { notification ->
-                        SectionCard(
-                            containerColor =
-                                if (notification.read) {
-                                    CardWhite
-                                } else {
-                                    SoftBlue
-                                }
-                        ) {
-                            Text(
-                                notification.title,
-                                fontWeight = FontWeight.Bold,
-                                color = Navy
-                            )
-                            Text(
-                                notification.message,
-                                color = TextSecondary
-                            )
-                            Text(
-                                java.text.SimpleDateFormat(
-                                    "dd/MM/yyyy HH:mm",
-                                    java.util.Locale
-                                        .getDefault()
-                                ).format(
-                                    java.util.Date(
-                                        notification.createdAt
-                                    )
-                                ),
-                                style =
-                                    MaterialTheme.typography
-                                        .labelSmall,
-                                color = TextSecondary
-                            )
-
-                            if (
-                                !notification.read &&
-                                state.currentUser != null
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        val profile =
-                                            state.currentUser
-                                                ?: return@TextButton
-                                        sharingScope.launch {
-                                            runCatching {
-                                                cloudManager
-                                                    .markNotificationRead(
-                                                        profile.userId,
-                                                        notification.id
-                                                    )
-                                            }.onSuccess {
-                                                notifications =
-                                                    notifications.map {
-                                                        if (
-                                                            it.id ==
-                                                                notification.id
-                                                        ) {
-                                                            it.copy(
-                                                                read = true
-                                                            )
-                                                        } else {
-                                                            it
-                                                        }
-                                                    }
-                                            }
-                                        }
-                                    }
-                                ) {
-                                    Text("סימון כנקראה")
-                                }
-                            }
-                        }
-                    }
-
-                    if (notificationsLoading) {
-                        item {
-                            Box(
-                                modifier =
-                                    Modifier.fillMaxWidth(),
-                                contentAlignment =
-                                    Alignment.Center
-                            ) {
-                                CircularProgressIndicator()
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showNotifications = false
-                    }
-                ) {
-                    Text("סגירה")
-                }
-            }
-        )
-    }
-
-    if (showActivityFeed) {
+        if (showActivityFeed) {
             activityFeedLoading = true
             runCatching {
                 cloudManager.getActivityFeed(
@@ -1545,6 +1412,139 @@ fun GalTripsApp(
                 }
             },
             confirmButton = { Button(onClick = { showSettingsDialog = false }) { Text("שמירה וסגירה") } }
+        )
+    }
+
+    if (showNotifications) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!notificationsLoading) {
+                    showNotifications = false
+                }
+            },
+            title = {
+                Text("התראות")
+            },
+            text = {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp),
+                    verticalArrangement =
+                        Arrangement.spacedBy(10.dp)
+                ) {
+                    if (
+                        notifications.isEmpty() &&
+                        !notificationsLoading
+                    ) {
+                        item {
+                            Text(
+                                "אין התראות חדשות.",
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    items(
+                        notifications,
+                        key = { it.id }
+                    ) { notification ->
+                        SectionCard(
+                            containerColor =
+                                if (notification.read) {
+                                    CardWhite
+                                } else {
+                                    SoftBlue
+                                }
+                        ) {
+                            Text(
+                                notification.title,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                            Text(
+                                notification.message,
+                                color = TextSecondary
+                            )
+                            Text(
+                                java.text.SimpleDateFormat(
+                                    "dd/MM/yyyy HH:mm",
+                                    java.util.Locale
+                                        .getDefault()
+                                ).format(
+                                    java.util.Date(
+                                        notification.createdAt
+                                    )
+                                ),
+                                style =
+                                    MaterialTheme.typography
+                                        .labelSmall,
+                                color = TextSecondary
+                            )
+
+                            if (
+                                !notification.read &&
+                                state.currentUser != null
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        val profile =
+                                            state.currentUser
+                                                ?: return@TextButton
+                                        sharingScope.launch {
+                                            runCatching {
+                                                cloudManager
+                                                    .markNotificationRead(
+                                                        profile.userId,
+                                                        notification.id
+                                                    )
+                                            }.onSuccess {
+                                                notifications =
+                                                    notifications.map {
+                                                        if (
+                                                            it.id ==
+                                                                notification.id
+                                                        ) {
+                                                            it.copy(
+                                                                read = true
+                                                            )
+                                                        } else {
+                                                            it
+                                                        }
+                                                    }
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Text("סימון כנקראה")
+                                }
+                            }
+                        }
+                    }
+
+                    if (notificationsLoading) {
+                        item {
+                            Box(
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                contentAlignment =
+                                    Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showNotifications = false
+                    }
+                ) {
+                    Text("סגירה")
+                }
+            }
         )
     }
 
