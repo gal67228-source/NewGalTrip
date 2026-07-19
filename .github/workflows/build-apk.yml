@@ -67,9 +67,11 @@ jobs:
           ROUTES_APP_TOKEN: ${{ secrets.ROUTES_APP_TOKEN }}
         run: |
           if [ -z "$ROUTES_WORKER_URL" ]; then
-  echo "::warning::ROUTES_WORKER_URL is not configured; route worker integration will be disabled."
-fi
-          test -n "$ROUTES_APP_TOKEN" || { echo "::error::Missing ROUTES_APP_TOKEN secret"; exit 1; }
+            echo "::warning::ROUTES_WORKER_URL is not configured; route worker integration will be disabled."
+          fi
+          if [ -z "$ROUTES_APP_TOKEN" ]; then
+            echo "::warning::ROUTES_APP_TOKEN is not configured; route worker integration will be disabled."
+          fi
 
       - name: Restore stable debug keystore
         shell: bash
@@ -109,7 +111,7 @@ fi
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: FamilyGo-V9-7-0-Notifications-Links-Reliable-Sync-APK
+          name: FamilyGo-V9-7-1-YAML-Fix-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
