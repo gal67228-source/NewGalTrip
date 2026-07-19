@@ -21,8 +21,8 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 240
-        versionName '5.4.0-activity-feed'
+        versionCode 241
+        versionName '5.4.1-activity-feed-annotation-fix'
 
         buildConfigField "String", "ROUTES_WORKER_URL",
             "\"${routesWorkerUrl.replace('\\', '\\\\').replace('\"', '\\\"')}\""

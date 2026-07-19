@@ -184,7 +184,6 @@ data class TripMember(
 )
 
 @Serializable
-@Serializable
 data class TripActivityEvent(
     val id: String = "",
     val tripId: String = "",
@@ -198,6 +197,7 @@ data class TripActivityEvent(
     val createdAt: Long = 0L
 )
 
+@Serializable
 data class ManagedTripMember(
     val userId: String = "",
     val displayName: String = "",
