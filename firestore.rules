@@ -103,5 +103,13 @@ service cloud.firestore {
         && resource.data.createdBy
           == request.auth.uid;
     }
+    match /users/{userId}/notifications/{notificationId} {
+      allow read, update: if signedIn()
+        && request.auth.uid == userId;
+      allow create: if signedIn();
+      allow delete: if signedIn()
+        && request.auth.uid == userId;
+    }
+
   }
 }

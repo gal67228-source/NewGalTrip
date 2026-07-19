@@ -73,6 +73,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         store = TripStore(this)
         cloudManager = FirebaseCloudManager(this)
+        val reliableSyncQueue =
+            ReliableSyncQueue(this)
         consumeInviteIntent(intent)
         diffSyncCoordinator =
             DiffSyncCoordinator(
@@ -92,9 +94,19 @@ class MainActivity : ComponentActivity() {
                     )
                 },
                 onError = {
-                    // Local data remains safe.
-                }
+                    // Local data remains safe and is queued.
+                },
+                reliableQueue =
+                    reliableSyncQueue
             )
+
+        lifecycleScope.launch {
+            reliableSyncQueue.retryAll(
+                TripDiffSyncEngine(
+                    V9CloudRepository()
+                )
+            )
+        }
 
         setContent {
             GalTripsTheme {
@@ -293,18 +305,38 @@ class MainActivity : ComponentActivity() {
         sourceIntent: Intent?
     ) {
         val uri = sourceIntent?.data ?: return
-        if (
+        val customScheme =
             uri.scheme.equals(
                 "familygo",
                 ignoreCase = true
             ) &&
-            uri.host.equals(
-                "invite",
+                uri.host.equals(
+                    "invite",
+                    ignoreCase = true
+                )
+
+        val webLink =
+            uri.scheme.equals(
+                "https",
                 ignoreCase = true
-            )
-        ) {
-            val code = uri
-                .getQueryParameter("code")
+            ) &&
+                uri.host.equals(
+                    "familygo.app",
+                    ignoreCase = true
+                ) &&
+                uri.pathSegments.firstOrNull()
+                    .equals(
+                        "invite",
+                        ignoreCase = true
+                    )
+
+        if (customScheme || webLink) {
+            val code = if (webLink) {
+                uri.pathSegments
+                    .getOrNull(1)
+            } else {
+                uri.getQueryParameter("code")
+            }
                 ?.trim()
                 ?.uppercase()
                 ?.takeIf { it.length == 6 }
@@ -630,6 +662,17 @@ fun GalTripsApp(
     var showActivityFeed by remember {
         mutableStateOf(false)
     }
+    var showNotifications by remember {
+        mutableStateOf(false)
+    }
+    var notifications by remember {
+        mutableStateOf<List<AppNotification>>(
+            emptyList()
+        )
+    }
+    var notificationsLoading by remember {
+        mutableStateOf(false)
+    }
     var activityFeed by remember {
         mutableStateOf<List<TripActivityEvent>>(
             emptyList()
@@ -681,10 +724,164 @@ fun GalTripsApp(
     } ?: state.trips.first()
 
     LaunchedEffect(
+        showNotifications,
+        state.currentUser?.userId
+    ) {
+        val profile = state.currentUser
+        if (
+            showNotifications &&
+            profile != null
+        ) {
+            notificationsLoading = true
+            runCatching {
+                cloudManager.getNotifications(
+                    profile.userId
+                )
+            }.onSuccess {
+                notifications = it
+            }
+            notificationsLoading = false
+        }
+    }
+
+    LaunchedEffect(
         showActivityFeed,
         trip.id
     ) {
-        if (showActivityFeed) {
+        if (showNotifications) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!notificationsLoading) {
+                    showNotifications = false
+                }
+            },
+            title = {
+                Text("התראות")
+            },
+            text = {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp),
+                    verticalArrangement =
+                        Arrangement.spacedBy(10.dp)
+                ) {
+                    if (
+                        notifications.isEmpty() &&
+                        !notificationsLoading
+                    ) {
+                        item {
+                            Text(
+                                "אין התראות חדשות.",
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    items(
+                        notifications,
+                        key = { it.id }
+                    ) { notification ->
+                        SectionCard(
+                            containerColor =
+                                if (notification.read) {
+                                    CardWhite
+                                } else {
+                                    SoftBlue
+                                }
+                        ) {
+                            Text(
+                                notification.title,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy
+                            )
+                            Text(
+                                notification.message,
+                                color = TextSecondary
+                            )
+                            Text(
+                                java.text.SimpleDateFormat(
+                                    "dd/MM/yyyy HH:mm",
+                                    java.util.Locale
+                                        .getDefault()
+                                ).format(
+                                    java.util.Date(
+                                        notification.createdAt
+                                    )
+                                ),
+                                style =
+                                    MaterialTheme.typography
+                                        .labelSmall,
+                                color = TextSecondary
+                            )
+
+                            if (
+                                !notification.read &&
+                                state.currentUser != null
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        val profile =
+                                            state.currentUser
+                                                ?: return@TextButton
+                                        sharingScope.launch {
+                                            runCatching {
+                                                cloudManager
+                                                    .markNotificationRead(
+                                                        profile.userId,
+                                                        notification.id
+                                                    )
+                                            }.onSuccess {
+                                                notifications =
+                                                    notifications.map {
+                                                        if (
+                                                            it.id ==
+                                                                notification.id
+                                                        ) {
+                                                            it.copy(
+                                                                read = true
+                                                            )
+                                                        } else {
+                                                            it
+                                                        }
+                                                    }
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Text("סימון כנקראה")
+                                }
+                            }
+                        }
+                    }
+
+                    if (notificationsLoading) {
+                        item {
+                            Box(
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                contentAlignment =
+                                    Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showNotifications = false
+                    }
+                ) {
+                    Text("סגירה")
+                }
+            }
+        )
+    }
+
+    if (showActivityFeed) {
             activityFeedLoading = true
             runCatching {
                 cloudManager.getActivityFeed(
@@ -1038,6 +1235,22 @@ fun GalTripsApp(
                                     showMainMenu = false
                                     showFamilyManagement =
                                         true
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text("התראות")
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Notifications,
+                                        null
+                                    )
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    showNotifications = true
                                 }
                             )
 
@@ -2001,7 +2214,7 @@ fun GalTripsApp(
                             Button(
                                 onClick = {
                                     val link =
-                                        "familygo://invite?code=${invite.code}"
+                                        "https://familygo.app/invite/${invite.code}"
                                     val message =
                                         "$link\n\nהוזמנת לטיול ${invite.tripName} ב-FamilyGo.\nקוד הזמנה: ${invite.code}"
                                     val intent =

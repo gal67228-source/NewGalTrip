@@ -13,7 +13,9 @@ class DiffSyncCoordinator(
     private val onSynced:
         suspend (Trip) -> Unit,
     private val onError:
-        suspend (Throwable) -> Unit
+        suspend (Throwable) -> Unit,
+    private val reliableQueue:
+        ReliableSyncQueue? = null
 ) {
     private var pendingJob: Job? = null
     private var baseTrip: Trip? = null
@@ -66,6 +68,12 @@ class DiffSyncCoordinator(
                     error.conflict
                 )
             }
+            reliableQueue?.enqueue(
+                base,
+                latest,
+                user,
+                error
+            )
             onError(error)
         }
     }

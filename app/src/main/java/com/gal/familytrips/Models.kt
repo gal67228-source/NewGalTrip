@@ -253,6 +253,31 @@ data class SyncStatus(
 )
 
 @Serializable
+data class AppNotification(
+    val id: String = "",
+    val type: String = "",
+    val tripId: String = "",
+    val tripName: String = "",
+    val title: String = "",
+    val message: String = "",
+    val createdAt: Long = 0L,
+    val read: Boolean = false,
+    val actorUserId: String = "",
+    val actorName: String = ""
+)
+
+@Serializable
+data class PendingSyncOperation(
+    val id: String = "",
+    val tripId: String = "",
+    val oldTripJson: String = "",
+    val newTripJson: String = "",
+    val profileJson: String = "",
+    val createdAt: Long = 0L,
+    val attempts: Int = 0,
+    val lastError: String = ""
+)
+
 data class AppState(
     val trips: List<Trip>,
     val currentTripId: String,

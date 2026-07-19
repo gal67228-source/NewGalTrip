@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FamilyGo Invitation</title>
+</head>
+<body>
+  <main>
+    <h1>FamilyGo</h1>
+    <p>פותחים את ההזמנה באפליקציה…</p>
+    <a id="open">פתיחה ב‑FamilyGo</a>
+  </main>
+  <script>
+    const code = location.pathname.split('/').filter(Boolean).pop();
+    const deepLink = `familygo://invite?code=${encodeURIComponent(code)}`;
+    document.getElementById('open').href = deepLink;
+    setTimeout(() => location.href = deepLink, 250);
+  </script>
+</body>
+</html>

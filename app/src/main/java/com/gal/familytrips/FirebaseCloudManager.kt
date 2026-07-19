@@ -842,4 +842,51 @@ class FirebaseCloudManager(
     }
 
 
+    suspend fun createNotification(
+        userId: String,
+        notification: AppNotification
+    ) {
+        firestore.collection("users")
+            .document(userId)
+            .collection("notifications")
+            .document(notification.id)
+            .set(notification)
+            .await()
+    }
+
+    suspend fun getNotifications(
+        userId: String
+    ): List<AppNotification> {
+        return firestore.collection("users")
+            .document(userId)
+            .collection("notifications")
+            .orderBy(
+                "createdAt",
+                com.google.firebase.firestore.Query
+                    .Direction.DESCENDING
+            )
+            .limit(100)
+            .get()
+            .await()
+            .documents
+            .mapNotNull {
+                it.toObject(
+                    AppNotification::class.java
+                )
+            }
+    }
+
+    suspend fun markNotificationRead(
+        userId: String,
+        notificationId: String
+    ) {
+        firestore.collection("users")
+            .document(userId)
+            .collection("notifications")
+            .document(notificationId)
+            .update("read", true)
+            .await()
+    }
+
+
 }
