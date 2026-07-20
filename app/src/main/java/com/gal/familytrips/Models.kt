@@ -131,7 +131,15 @@ data class TripDocument(
     val bookingId: String = "",
     val documentRole: String = "",
     val offlineAvailable: Boolean = true,
-    val addedAt: Long = 0L
+    val addedAt: Long = 0L,
+    val bookingReference: String = "",
+    val documentDate: String = "",
+    val documentTime: String = "",
+    val linkedEntityType: String = "",
+    val linkedEntityId: String = "",
+    val mimeType: String = "",
+    val sourceType: String = "file",
+    val localCopyPath: String = ""
 )
 
 @Serializable

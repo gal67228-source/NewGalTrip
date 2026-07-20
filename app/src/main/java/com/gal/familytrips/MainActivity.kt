@@ -1278,10 +1278,14 @@ fun GalTripsApp(
                     Modifier.padding(padding)
                 )
 
-                7 -> DocumentsScreen(
-                    trip,
-                    { onStateChange(state.replaceTrip(it)) },
-                    Modifier.padding(padding)
+                7 -> DocumentsModuleScreen(
+                    trip = trip,
+                    onTripChange = {
+                        onStateChange(
+                            state.replaceTrip(it)
+                        )
+                    },
+                    modifier = Modifier.padding(padding)
                 )
 
                 8 -> GeneralInfoScreen(
