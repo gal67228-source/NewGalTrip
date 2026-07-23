@@ -64,6 +64,95 @@ private data class AutomaticDocumentRequirement(
     val suggestedName: String = title
 )
 
+private fun ActivityItem.requiresAttractionDocument(): Boolean {
+    val searchable = "$name $notes".lowercase()
+
+    val attractionKeywords = listOf(
+        "כרטיס",
+        "הזמנה",
+        "אישור",
+        "voucher",
+        "ticket",
+        "booking",
+        "reservation",
+        "אטרקציה",
+        "מוזיאון",
+        "סיור",
+        "מופע",
+        "הופעה",
+        "תערוכה",
+        "פארק שעשועים",
+        "כניסה מוזמנת",
+        "tour",
+        "museum",
+        "show",
+        "attraction"
+    )
+
+    return attractionKeywords.any {
+        searchable.contains(it)
+    }
+}
+
+private fun ActivityItem.requiresTransportDocument(): Boolean {
+    val searchable =
+        "$transport $name $notes".lowercase()
+
+    val excluded = listOf(
+        "הליכה",
+        "walk",
+        "רכב",
+        "נהיגה",
+        "car",
+        "מטרו",
+        "metro",
+        "אוטובוס מקומי",
+        "local bus",
+        "תחבורה ציבורית"
+    )
+
+    if (excluded.any { searchable.contains(it) }) {
+        return false
+    }
+
+    val bookedTransportKeywords = listOf(
+        "העברה",
+        "הסעה",
+        "שאטל",
+        "מונית מוזמנת",
+        "נהג פרטי",
+        "רכבת",
+        "מעבורת",
+        "אוטובוס מוזמן",
+        "transfer",
+        "shuttle",
+        "private driver",
+        "booked taxi",
+        "train",
+        "ferry",
+        "coach"
+    )
+
+    val bookingKeywords = listOf(
+        "כרטיס",
+        "הזמנה",
+        "אישור",
+        "voucher",
+        "ticket",
+        "booking",
+        "reservation"
+    )
+
+    return bookedTransportKeywords.any {
+        searchable.contains(it)
+    } || (
+        transport.isNotBlank() &&
+            bookingKeywords.any {
+                searchable.contains(it)
+            }
+    )
+}
+
 private fun automaticDocumentRequirements(
     trip: Trip
 ): List<AutomaticDocumentRequirement> {
@@ -135,54 +224,79 @@ private fun automaticDocumentRequirements(
 
     trip.days.forEach { day ->
         day.activities.forEach { activity ->
-            if (activity.name.isNotBlank()) {
+            if (
+                activity.name.isNotBlank() &&
+                activity.requiresAttractionDocument()
+            ) {
                 requirements += AutomaticDocumentRequirement(
-                    key = "activity-${activity.id}",
-                    title = "כרטיס / אישור · ${activity.name}",
+                    key = "attraction-${activity.id}",
+                    title =
+                        "כרטיס / אישור · ${activity.name}",
                     description = buildString {
                         append(day.date)
                         if (activity.time.isNotBlank()) {
                             append(" · ${activity.time}")
                         }
-                        if (activity.location.isNotBlank()) {
-                            append(" · ${activity.location}")
+                        if (
+                            activity.location.isNotBlank()
+                        ) {
+                            append(
+                                " · ${activity.location}"
+                            )
                         }
                     },
                     category = "אטרקציות",
                     linkedEntityType = "activity",
                     linkedEntityId = activity.id,
                     bookingId = activity.id,
-                    suggestedName = "כרטיס ${activity.name}"
+                    suggestedName =
+                        "כרטיס ${activity.name}"
                 )
             }
 
-            val transport = activity.transport.trim()
-            val walkingOnly = transport.equals(
-                "הליכה",
-                ignoreCase = true
-            ) || transport.equals(
-                "walk",
-                ignoreCase = true
-            )
-
-            if (transport.isNotBlank() && !walkingOnly) {
-                requirements += AutomaticDocumentRequirement(
-                    key = "transport-${activity.id}",
-                    title = "כרטיס תחבורה · $transport",
-                    description = buildString {
-                        append("לקראת ${activity.name}")
-                        if (day.date.isNotBlank()) {
-                            append(" · ${day.date}")
+            if (
+                activity.requiresTransportDocument()
+            ) {
+                val transportTitle =
+                    activity.transport
+                        .ifBlank {
+                            activity.name
                         }
-                        if (activity.time.isNotBlank()) {
-                            append(" · ${activity.time}")
+
+                requirements += AutomaticDocumentRequirement(
+                    key = "transfer-${activity.id}",
+                    title =
+                        "כרטיס / אישור העברה · $transportTitle",
+                    description = buildString {
+                        if (
+                            activity.name.isNotBlank() &&
+                            activity.name !=
+                                transportTitle
+                        ) {
+                            append(
+                                "לקראת ${activity.name}"
+                            )
+                        }
+                        if (day.date.isNotBlank()) {
+                            if (isNotEmpty()) {
+                                append(" · ")
+                            }
+                            append(day.date)
+                        }
+                        if (
+                            activity.time.isNotBlank()
+                        ) {
+                            append(
+                                " · ${activity.time}"
+                            )
                         }
                     },
                     category = "תחבורה",
                     linkedEntityType = "activity",
                     linkedEntityId = activity.id,
                     bookingId = activity.id,
-                    suggestedName = "כרטיס $transport"
+                    suggestedName =
+                        "אישור העברה $transportTitle"
                 )
             }
         }
