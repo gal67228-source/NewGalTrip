@@ -17,11 +17,14 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -49,6 +52,156 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+
+private data class AutomaticDocumentRequirement(
+    val key: String,
+    val title: String,
+    val description: String,
+    val category: String,
+    val linkedEntityType: String = "",
+    val linkedEntityId: String = "",
+    val bookingId: String = "",
+    val suggestedName: String = title
+)
+
+private fun automaticDocumentRequirements(
+    trip: Trip
+): List<AutomaticDocumentRequirement> {
+    val requirements = mutableListOf(
+        AutomaticDocumentRequirement(
+            key = "general-passports",
+            title = "דרכונים",
+            description =
+                "צרפו צילום דרכון לכל נוסע",
+            category = "מסמכים אישיים",
+            suggestedName = "דרכון"
+        ),
+        AutomaticDocumentRequirement(
+            key = "general-travel-insurance",
+            title = "ביטוח נסיעות",
+            description =
+                "פוליסה ופרטי מוקד החירום",
+            category = "ביטוח",
+            suggestedName = "ביטוח נסיעות"
+        ),
+        AutomaticDocumentRequirement(
+            key = "general-important-documents",
+            title = "מסמכים כלליים חשובים",
+            description =
+                "אשרות, אישורים או מסמכי חירום",
+            category = "כללי",
+            suggestedName = "מסמך כללי"
+        )
+    )
+
+    trip.flights.forEach { flight ->
+        requirements += AutomaticDocumentRequirement(
+            key = "flight-${flight.id}",
+            title = buildString {
+                append("כרטיסים ואישור טיסה")
+                if (flight.flightNumber.isNotBlank()) {
+                    append(" · ${flight.flightNumber}")
+                }
+            },
+            description =
+                "${flight.departureAirport} → ${flight.arrivalAirport} · ${flight.departureDate}",
+            category = "טיסות",
+            linkedEntityType = "flight",
+            linkedEntityId = flight.id,
+            bookingId = flight.id,
+            suggestedName = if (
+                flight.flightNumber.isNotBlank()
+            ) {
+                "טיסה ${flight.flightNumber}"
+            } else {
+                "אישור טיסה ${flight.departureAirport}-${flight.arrivalAirport}"
+            }
+        )
+    }
+
+    trip.hotels.forEach { hotel ->
+        requirements += AutomaticDocumentRequirement(
+            key = "hotel-${hotel.id}",
+            title = "אישור מלון · ${hotel.name}",
+            description =
+                "${hotel.checkIn} – ${hotel.checkOut}",
+            category = "מלונות",
+            linkedEntityType = "hotel",
+            linkedEntityId = hotel.id,
+            bookingId = hotel.id,
+            suggestedName = "אישור מלון ${hotel.name}"
+        )
+    }
+
+    trip.days.forEach { day ->
+        day.activities.forEach { activity ->
+            if (activity.name.isNotBlank()) {
+                requirements += AutomaticDocumentRequirement(
+                    key = "activity-${activity.id}",
+                    title = "כרטיס / אישור · ${activity.name}",
+                    description = buildString {
+                        append(day.date)
+                        if (activity.time.isNotBlank()) {
+                            append(" · ${activity.time}")
+                        }
+                        if (activity.location.isNotBlank()) {
+                            append(" · ${activity.location}")
+                        }
+                    },
+                    category = "אטרקציות",
+                    linkedEntityType = "activity",
+                    linkedEntityId = activity.id,
+                    bookingId = activity.id,
+                    suggestedName = "כרטיס ${activity.name}"
+                )
+            }
+
+            val transport = activity.transport.trim()
+            val walkingOnly = transport.equals(
+                "הליכה",
+                ignoreCase = true
+            ) || transport.equals(
+                "walk",
+                ignoreCase = true
+            )
+
+            if (transport.isNotBlank() && !walkingOnly) {
+                requirements += AutomaticDocumentRequirement(
+                    key = "transport-${activity.id}",
+                    title = "כרטיס תחבורה · $transport",
+                    description = buildString {
+                        append("לקראת ${activity.name}")
+                        if (day.date.isNotBlank()) {
+                            append(" · ${day.date}")
+                        }
+                        if (activity.time.isNotBlank()) {
+                            append(" · ${activity.time}")
+                        }
+                    },
+                    category = "תחבורה",
+                    linkedEntityType = "activity",
+                    linkedEntityId = activity.id,
+                    bookingId = activity.id,
+                    suggestedName = "כרטיס $transport"
+                )
+            }
+        }
+    }
+
+    return requirements.distinctBy { it.key }
+}
+
+private fun requirementEmoji(
+    category: String
+): String = when (category) {
+    "טיסות" -> "✈️"
+    "מלונות" -> "🏨"
+    "אטרקציות" -> "🎟️"
+    "תחבורה" -> "🚆"
+    "ביטוח" -> "🛡️"
+    "מסמכים אישיים" -> "🛂"
+    else -> "📄"
+}
 
 @Composable
 fun DocumentsModuleScreen(
@@ -90,7 +243,37 @@ fun DocumentsModuleScreen(
         "כללי"
     )
 
+    val automaticRequirements =
+        automaticDocumentRequirements(trip)
+
+    val visibleRequirements =
+        automaticRequirements.filter { requirement ->
+            (
+                state.category == "הכול" ||
+                    requirement.category ==
+                        state.category
+            ) && (
+                state.search.isBlank() ||
+                    requirement.title.contains(
+                        state.search,
+                        ignoreCase = true
+                    ) ||
+                    requirement.description.contains(
+                        state.search,
+                        ignoreCase = true
+                    )
+            )
+        }
+
+    fun documentsFor(
+        requirement: AutomaticDocumentRequirement
+    ): List<TripDocument> =
+        trip.documents.filter {
+            it.requirementKey == requirement.key
+        }
+
     val visibleDocuments = trip.documents
+        .filter { it.requirementKey.isBlank() }
         .filter { document ->
             state.category == "הכול" ||
                 document.type == state.category
@@ -176,7 +359,8 @@ fun DocumentsModuleScreen(
 
                         OutlinedButton(
                             onClick = {
-                                val target =
+                                viewModel.clearRequirementPreset()
+                            val target =
                                     viewModel.prepareCamera()
                                 cameraLauncher.launch(
                                     target.first
@@ -231,7 +415,215 @@ fun DocumentsModuleScreen(
             }
         }
 
-        if (visibleDocuments.isEmpty()) {
+        if (visibleRequirements.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "מסמכים נדרשים",
+                            style =
+                                MaterialTheme.typography
+                                    .titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "הרשימה מתעדכנת אוטומטית לפי הטיול",
+                            style =
+                                MaterialTheme.typography
+                                    .bodySmall,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+
+                    val ready = visibleRequirements.count {
+                        documentsFor(it).isNotEmpty()
+                    }
+                    Text(
+                        "$ready/${visibleRequirements.size}",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2563EB)
+                    )
+                }
+            }
+
+            items(
+                visibleRequirements,
+                key = { "requirement-${it.key}" }
+            ) { requirement ->
+                val attached = documentsFor(requirement)
+                val completed = attached.isNotEmpty()
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (completed) {
+                            Color(0xFFF0FDF4)
+                        } else {
+                            Color.White
+                        }
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement =
+                            Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment =
+                                Alignment.CenterVertically
+                        ) {
+                            Text(
+                                requirementEmoji(
+                                    requirement.category
+                                ),
+                                style =
+                                    MaterialTheme.typography
+                                        .titleLarge
+                            )
+                            Spacer(Modifier.padding(5.dp))
+
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    requirement.title,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    requirement.description,
+                                    style =
+                                        MaterialTheme.typography
+                                            .bodySmall,
+                                    color = Color(0xFF64748B)
+                                )
+                            }
+
+                            Icon(
+                                if (completed) {
+                                    Icons.Default.CheckCircle
+                                } else {
+                                    Icons.Default.WarningAmber
+                                },
+                                contentDescription = null,
+                                tint = if (completed) {
+                                    Color(0xFF16A34A)
+                                } else {
+                                    Color(0xFFF59E0B)
+                                }
+                            )
+                        }
+
+                        attached.forEach { document ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment =
+                                        Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Description,
+                                        contentDescription = null,
+                                        tint = Color(0xFF2563EB)
+                                    )
+                                    Spacer(Modifier.padding(4.dp))
+                                    Text(
+                                        document.name,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow =
+                                            TextOverflow.Ellipsis
+                                    )
+                                    TextButton(
+                                        onClick = {
+                                            viewModel.open(document)
+                                        }
+                                    ) {
+                                        Text("פתיחה")
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            onTripChange(
+                                                trip.copy(
+                                                    documents =
+                                                        trip.documents
+                                                            .filterNot {
+                                                                it.id ==
+                                                                    document.id
+                                                            }
+                                                )
+                                            )
+                                        }
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription =
+                                                "מחיקה",
+                                            tint = Color(0xFFDC2626)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.prepareRequirement(
+                                    requirementKey =
+                                        requirement.key,
+                                    suggestedName =
+                                        requirement.suggestedName,
+                                    category =
+                                        requirement.category,
+                                    linkedEntityType =
+                                        requirement.linkedEntityType,
+                                    linkedEntityId =
+                                        requirement.linkedEntityId,
+                                    bookingId =
+                                        requirement.bookingId
+                                )
+                                fileLauncher.launch(
+                                    arrayOf(
+                                        "application/pdf",
+                                        "image/*"
+                                    )
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.AddCircle,
+                                contentDescription = null
+                            )
+                            Spacer(Modifier.padding(3.dp))
+                            Text(
+                                if (completed) {
+                                    "הוספת קובץ נוסף"
+                                } else {
+                                    "צירוף קובץ"
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (
+            visibleDocuments.isEmpty() &&
+            visibleRequirements.isEmpty()
+        ) {
             item {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -289,6 +681,11 @@ fun DocumentsModuleScreen(
     if (state.showMetadata) {
         DocumentMetadataDialog(
             initialName = state.pendingName,
+            initialCategory = state.pendingCategory,
+            initialLinkedEntityType =
+                state.pendingLinkedEntityType,
+            initialLinkedEntityId =
+                state.pendingLinkedEntityId,
             trip = trip,
             onDismiss = viewModel::dismissMetadata,
             onSave = { input ->
@@ -409,6 +806,9 @@ private fun DocumentCard(
 @Composable
 private fun DocumentMetadataDialog(
     initialName: String,
+    initialCategory: String,
+    initialLinkedEntityType: String,
+    initialLinkedEntityId: String,
     trip: Trip,
     onDismiss: () -> Unit,
     onSave: (DocumentMetadataInput) -> Unit
@@ -416,8 +816,10 @@ private fun DocumentMetadataDialog(
     var name by remember {
         mutableStateOf(initialName)
     }
-    var category by remember {
-        mutableStateOf("כללי")
+    var category by remember(initialCategory) {
+        mutableStateOf(
+            initialCategory.ifBlank { "כללי" }
+        )
     }
     var bookingReference by remember {
         mutableStateOf("")
@@ -425,11 +827,15 @@ private fun DocumentMetadataDialog(
     var date by remember { mutableStateOf("") }
     var time by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
-    var linkedType by remember {
-        mutableStateOf("")
+    var linkedType by remember(
+        initialLinkedEntityType
+    ) {
+        mutableStateOf(initialLinkedEntityType)
     }
-    var linkedId by remember {
-        mutableStateOf("")
+    var linkedId by remember(
+        initialLinkedEntityId
+    ) {
+        mutableStateOf(initialLinkedEntityId)
     }
 
     val categories = listOf(

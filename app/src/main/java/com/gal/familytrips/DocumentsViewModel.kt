@@ -17,7 +17,13 @@ data class DocumentsUiState(
     val pendingMime: String = "",
     val pendingSource: String = "file",
     val cameraPath: String = "",
-    val showMetadata: Boolean = false
+    val showMetadata: Boolean = false,
+    val pendingRequirementKey: String = "",
+    val pendingCategory: String = "",
+    val pendingLinkedEntityType: String = "",
+    val pendingLinkedEntityId: String = "",
+    val pendingBookingId: String = "",
+    val pendingSuggestedName: String = ""
 )
 
 data class DocumentMetadataInput(
@@ -49,13 +55,47 @@ class DocumentsViewModel(
             mutableState.value.copy(category = value)
     }
 
+    fun clearRequirementPreset() {
+        mutableState.value = mutableState.value.copy(
+            pendingRequirementKey = "",
+            pendingSuggestedName = "",
+            pendingCategory = "",
+            pendingLinkedEntityType = "",
+            pendingLinkedEntityId = "",
+            pendingBookingId = ""
+        )
+    }
+
+    fun prepareRequirement(
+        requirementKey: String,
+        suggestedName: String,
+        category: String,
+        linkedEntityType: String,
+        linkedEntityId: String,
+        bookingId: String
+    ) {
+        mutableState.value = mutableState.value.copy(
+            pendingRequirementKey = requirementKey,
+            pendingSuggestedName = suggestedName,
+            pendingCategory = category,
+            pendingLinkedEntityType =
+                linkedEntityType,
+            pendingLinkedEntityId = linkedEntityId,
+            pendingBookingId = bookingId
+        )
+    }
+
     fun acceptFile(uri: Uri) {
         repository.persistReadPermission(uri)
         mutableState.value = mutableState.value.copy(
             pendingUri = uri,
-            pendingName = uri.lastPathSegment
-                ?.substringAfterLast("/")
-                ?: "מסמך",
+            pendingName = mutableState.value
+                .pendingSuggestedName
+                .ifBlank {
+                    uri.lastPathSegment
+                        ?.substringAfterLast("/")
+                        ?: "מסמך"
+                },
             pendingMime = repository.mimeType(uri),
             pendingSource = "file",
             showMetadata = true
@@ -124,7 +164,10 @@ class DocumentsViewModel(
             linkedEntityId = input.linkedEntityId,
             mimeType = current.pendingMime,
             sourceType = current.pendingSource,
-            localCopyPath = localPath
+            localCopyPath = localPath,
+            requirementKey =
+                current.pendingRequirementKey,
+            bookingId = current.pendingBookingId
         )
 
         dismissMetadata()
