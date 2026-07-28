@@ -153,6 +153,32 @@ data class PackingItem(
 )
 
 @Serializable
+data class BookingImportCandidate(
+    val type: String = "",
+    val title: String = "",
+    val bookingReference: String = "",
+    val startDate: String = "",
+    val endDate: String = "",
+    val startTime: String = "",
+    val endTime: String = "",
+    val origin: String = "",
+    val destination: String = "",
+    val address: String = "",
+    val notes: String = "",
+    val confidence: Int = 0
+)
+
+@Serializable
+data class OfflinePackStatus(
+    val tripId: String = "",
+    val preparedAt: Long = 0L,
+    val snapshotPath: String = "",
+    val documentCount: Int = 0,
+    val missingDocumentCount: Int = 0,
+    val ready: Boolean = false
+)
+
+@Serializable
 data class Trip(
     val id: String,
     val name: String,

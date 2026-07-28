@@ -650,6 +650,12 @@ fun GalTripsApp(
     var showSettingsDialog by remember {
         mutableStateOf(false)
     }
+    var showBookingImport by remember {
+        mutableStateOf(false)
+    }
+    var showOfflinePack by remember {
+        mutableStateOf(false)
+    }
     var showSharingDialog by remember {
         mutableStateOf(false)
     }
@@ -1138,6 +1144,28 @@ fun GalTripsApp(
                             )
 
                             DropdownMenuItem(
+                                text = { Text("קליטת אישור הזמנה") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.AutoAwesome, null)
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    showBookingImport = true
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("הכנה לאופליין") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.CloudDownload, null)
+                                },
+                                onClick = {
+                                    showMainMenu = false
+                                    showOfflinePack = true
+                                }
+                            )
+
+                            DropdownMenuItem(
                                 text = { Text("הגדרות") },
                                 leadingIcon = {
                                     Icon(Icons.Default.Settings, null)
@@ -1378,6 +1406,30 @@ fun GalTripsApp(
                 }
             },
             confirmButton = { Button(onClick = { showAccountDialog = false }) { Text("סגירה") } }
+        )
+    }
+
+    if (showBookingImport) {
+        BookingImportDialog(
+            trip = trip,
+            onTripChange = {
+                onStateChange(state.replaceTrip(it))
+            },
+            onDismiss = {
+                showBookingImport = false
+            }
+        )
+    }
+
+    if (showOfflinePack) {
+        OfflinePackDialog(
+            trip = trip,
+            onTripChange = {
+                onStateChange(state.replaceTrip(it))
+            },
+            onDismiss = {
+                showOfflinePack = false
+            }
         )
     }
 
