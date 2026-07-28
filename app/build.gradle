@@ -21,8 +21,8 @@ android {
         applicationId 'com.gal.familytrips'
         minSdk 26
         targetSdk 35
-        versionCode 291
-        versionName '5.9.1-booking-pdf-image-ocr'
+        versionCode 292
+        versionName '5.9.2-day-scroll-route-stability'
 
         buildConfigField "String", "ROUTES_WORKER_URL",
             "\"${routesWorkerUrl.replace('\\', '\\\\').replace('\"', '\\\"')}\""

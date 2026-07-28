@@ -4743,6 +4743,13 @@ private fun DaysScreen(
 ) {
     var editingDay by remember { mutableStateOf<TripDay?>(null) }
 
+    val timelineConflict =
+        remember(orderedActivities.toList()) {
+            findTimelineConflict(
+                orderedActivities.toList()
+            )
+        }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -4959,12 +4966,12 @@ private fun DayDetailScreen(
         day.activities.joinToString("|") {
             listOf(
                 it.id,
-                it.location,
+                it.time,
+                it.location.trim(),
                 it.latitude?.toString().orEmpty(),
                 it.longitude?.toString().orEmpty(),
                 it.transitionMode,
-                it.transitionAutomatic.toString(),
-                it.routeCacheKey
+                it.transitionAutomatic.toString()
             ).joinToString(":")
         }
     }
@@ -4982,7 +4989,6 @@ private fun DayDetailScreen(
             routesRefreshing = false
 
             if (normalized.activities != day.activities) {
-                routesMessage = "זמני המעבר עודכנו לפי Google Maps"
                 onTripChange(
                     trip.copy(
                         days = trip.days.map {
@@ -5064,99 +5070,6 @@ private fun DayDetailScreen(
             }
         }
 
-        Spacer(Modifier.height(9.dp))
-        WeatherCard(trip = trip, day = day, modifier = Modifier.fillMaxWidth())
-        Spacer(Modifier.height(9.dp))
-
-        val timelineConflict = remember(orderedActivities.toList()) {
-            findTimelineConflict(orderedActivities.toList())
-        }
-
-        timelineConflict?.let { conflict ->
-            SectionCard(containerColor = Color(0xFFFFE5E1)) {
-                Text(
-                    "⚠ התנגשות בשעות",
-                    fontWeight = FontWeight.Bold,
-                    color = Coral
-                )
-                Text(
-                    conflict,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-
-        SectionCard(
-            containerColor = if (GoogleRoutesClient.isConfigured()) {
-                SoftAqua
-            } else {
-                SoftSun
-            }
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        if (GoogleRoutesClient.isConfigured()) {
-                            "Google Routes פעיל"
-                        } else {
-                            "Google Routes לא הוגדר"
-                        },
-                        fontWeight = FontWeight.Bold,
-                        color = Navy
-                    )
-                    Text(
-                        routesMessage ?: if (GoogleRoutesClient.isConfigured()) {
-                            "המסלולים נשמרים קבוע ומחושבים מחדש רק לאחר שינוי או רענון ידני."
-                        } else {
-                            "יש להגדיר ROUTES_WORKER_URL ו-ROUTES_APP_TOKEN בבנייה."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                }
-                if (routesRefreshing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else if (GoogleRoutesClient.isConfigured()) {
-                    IconButton(
-                        onClick = {
-                            timelineScope.launch {
-                                routesRefreshing = true
-                                val cleared = day.copy(
-                                    activities = day.activities.mapIndexed { index, item ->
-                                        if (index == 0) item else item.copy(
-                                            routeCacheKey = "",
-                                            routeUpdatedAt = 0L
-                                        )
-                                    }
-                                )
-                                val routed = GoogleRoutesClient.refreshDay(cleared)
-                                val normalized = validateAndNormalizeDayTimeline(routed)
-                                routesRefreshing = false
-                                routesMessage = "המסלולים חושבו מחדש ונשמרו"
-                                onTripChange(
-                                    trip.copy(
-                                        days = trip.days.map {
-                                            if (it.id == day.id) normalized else it
-                                        }
-                                    )
-                                )
-                            }
-                        }
-                    ) {
-                        Text("↻", fontWeight = FontWeight.Bold, color = Aqua)
-                    }
-                }
-            }
-        }
-
         Spacer(Modifier.height(8.dp))
 
         Row(
@@ -5214,8 +5127,74 @@ private fun DayDetailScreen(
             state = timelineListState,
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(9.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
+            contentPadding = PaddingValues(
+                top = 4.dp,
+                bottom = 24.dp
+            )
         ) {
+            item(
+                key = "day-weather"
+            ) {
+                WeatherCard(
+                    trip = trip,
+                    day = day,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            timelineConflict?.let { conflict ->
+                item(
+                    key = "timeline-conflict"
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xFFFFE5E1)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = 12.dp,
+                                    vertical = 9.dp
+                                ),
+                            verticalAlignment =
+                                Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "⚠",
+                                style =
+                                    MaterialTheme.typography
+                                        .titleMedium
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(
+                                modifier =
+                                    Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    "התנגשות בשעות",
+                                    fontWeight =
+                                        FontWeight.Bold,
+                                    color = Coral,
+                                    style =
+                                        MaterialTheme.typography
+                                            .bodyMedium
+                                )
+                                Text(
+                                    conflict,
+                                    maxLines = 2,
+                                    overflow =
+                                        TextOverflow.Ellipsis,
+                                    style =
+                                        MaterialTheme.typography
+                                            .bodySmall,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             itemsIndexed(
                 items = orderedActivities,
                 key = { _, item -> item.id }
