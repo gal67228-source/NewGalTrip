@@ -24,6 +24,42 @@ object GoogleRoutesClient {
         BuildConfig.ROUTES_WORKER_URL.isNotBlank() &&
             BuildConfig.ROUTES_APP_TOKEN.isNotBlank()
 
+    internal fun segmentsNeedingRefresh(day: TripDay): List<Int> =
+        day.activities.zipWithNext().mapIndexedNotNull { index, (previous, current) ->
+            if (!current.transitionAutomatic) {
+                null
+            } else {
+                val mode = resolvedTransitionMode(previous, current)
+                if (savedRouteMatches(
+                    current,
+                    routeCacheKey(previous, current, mode)
+                )) null else index + 1
+            }
+        }
+
+    internal fun needsRefresh(day: TripDay): Boolean =
+        segmentsNeedingRefresh(day).isNotEmpty()
+
+    internal fun keepNewerLocalRoute(
+        local: ActivityItem,
+        remote: ActivityItem
+    ): ActivityItem {
+        if (
+            local.routeCacheKey.isBlank() ||
+            local.routeUpdatedAt <= remote.routeUpdatedAt
+        ) return remote
+
+        return remote.copy(
+            transitionMinutes = local.transitionMinutes,
+            transitionDetails = local.transitionDetails,
+            routeDistanceMeters = local.routeDistanceMeters,
+            routeSource = local.routeSource,
+            routeStatus = local.routeStatus,
+            routeCacheKey = local.routeCacheKey,
+            routeUpdatedAt = local.routeUpdatedAt
+        )
+    }
+
     suspend fun refreshDay(day: TripDay): TripDay = withContext(Dispatchers.IO) {
         if (!isConfigured() || day.activities.size < 2) {
             return@withContext day
@@ -41,17 +77,10 @@ object GoogleRoutesClient {
 
             val mode = resolvedTransitionMode(previous, current)
             val cacheKey = routeCacheKey(previous, current, mode)
-            val savedRouteMatches =
-                current.routeCacheKey == cacheKey &&
-                    current.routeSource in setOf(
-                        "google",
-                        "estimate"
-                    )
-
             // Saved route data does not expire automatically.
             // Recalculate only when the route signature changes
             // or after an explicit manual refresh.
-            if (savedRouteMatches) {
+            if (savedRouteMatches(current, cacheKey)) {
                 previous = current
                 continue
             }
@@ -59,7 +88,6 @@ object GoogleRoutesClient {
             val result = fetchRoute(previous, current, mode, cacheKey)
             if (result != null) {
                 updated[index] = current.copy(
-                    transitionMode = mode,
                     transitionMinutes = result.durationMinutes,
                     transitionDetails = result.details,
                     routeDistanceMeters = result.distanceMeters,
@@ -204,7 +232,14 @@ object GoogleRoutesClient {
         }
     }
 
-    private fun routeCacheKey(
+    private fun savedRouteMatches(
+        current: ActivityItem,
+        cacheKey: String
+    ): Boolean =
+        current.routeCacheKey == cacheKey &&
+            current.routeSource in setOf("google", "estimate")
+
+    internal fun routeCacheKey(
         previous: ActivityItem,
         current: ActivityItem,
         mode: String

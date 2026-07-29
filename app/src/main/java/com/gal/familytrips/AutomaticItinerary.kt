@@ -36,15 +36,37 @@ fun rebuildAutomaticItinerary(trip: Trip): Trip {
 
     return result.copy(
         days = result.days.map { day ->
+            val previous = trip.days.firstOrNull { it.id == day.id }
             day.copy(
-                activities = day.activities.sortedWith(
-                    compareBy<ActivityItem> {
-                        itineraryTimeMinutes(it.time) ?: Int.MAX_VALUE
-                    }.thenBy { it.name }
+                activities = preserveActivityOrder(
+                    previous = previous?.activities.orEmpty(),
+                    generated = day.activities
                 )
             )
         }
     )
+}
+
+internal fun preserveActivityOrder(
+    previous: List<ActivityItem>,
+    generated: List<ActivityItem>
+): List<ActivityItem> {
+    val generatedById = generated.associateBy { it.id }
+    val previousIds = previous.mapTo(mutableSetOf()) { it.id }
+    val result = previous.mapNotNull { generatedById[it.id] }.toMutableList()
+
+    generated
+        .filterNot { it.id in previousIds }
+        .sortedBy { itineraryTimeMinutes(it.time) ?: Int.MAX_VALUE }
+        .forEach { activity ->
+            val minutes = itineraryTimeMinutes(activity.time) ?: Int.MAX_VALUE
+            val insertionIndex = result.indexOfFirst {
+                (itineraryTimeMinutes(it.time) ?: Int.MAX_VALUE) > minutes
+            }.let { if (it < 0) result.size else it }
+            result.add(insertionIndex, activity)
+        }
+
+    return result
 }
 
 private fun addFlightSkeleton(

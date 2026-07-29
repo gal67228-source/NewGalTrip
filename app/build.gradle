@@ -78,6 +78,8 @@ kotlin {
 
 dependencies {
 
+    testImplementation 'junit:junit:4.13.2'
+
     implementation 'com.google.firebase:firebase-auth:23.2.1'
     implementation 'com.google.firebase:firebase-firestore:25.1.4'
 

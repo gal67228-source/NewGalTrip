@@ -195,6 +195,11 @@ class V9CloudRepository(
 
         if (values.isEmpty()) return
 
+        values["payload"] = json.encodeToString(
+            CloudActivity.serializer(),
+            CloudActivity(dayId, position, new)
+        )
+
         val document = firestore.collection("trips")
             .document(tripId)
             .collection("activities")
@@ -323,6 +328,16 @@ class V9CloudRepository(
                         patch.new
                     )
                     .toMutableMap()
+
+                values["payload"] =
+                    json.encodeToString(
+                        CloudActivity.serializer(),
+                        CloudActivity(
+                            dayId = patch.newDayId,
+                            position = patch.newPosition,
+                            activity = patch.new
+                        )
+                    )
 
                 if (
                     patch.oldPosition !=
