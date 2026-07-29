@@ -1,6 +1,7 @@
 package com.gal.familytrips
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ScheduleTimeUtilsTest {
@@ -34,6 +35,33 @@ class ScheduleTimeUtilsTest {
         val normalized = normalizeActivityStartTimes(activities) { it.fixedTime }
 
         assertEquals(listOf("09:00", "15:00", "17:20"), normalized.map { it.time })
+    }
+
+    @Test
+    fun durationParserSupportsHebrewEnglishAndDecimalValues() {
+        assertEquals(90, parseActivityDurationMinutes("שעה וחצי"))
+        assertEquals(135, parseActivityDurationMinutes("2.25 hours"))
+        assertEquals(50, parseActivityDurationMinutes("50 mins"))
+    }
+
+    @Test
+    fun clockParserRejectsOutOfRangeValuesAndFormattingIsBounded() {
+        assertNull(parseActivityClockMinutes("24:00"))
+        assertNull(parseActivityClockMinutes("12:60"))
+        assertEquals("00:00", formatActivityClock(-10))
+        assertEquals("23:59", formatActivityClock(1_500))
+    }
+
+    @Test
+    fun transitionTimeIsIncludedBeforeFlexibleActivity() {
+        val normalized = normalizeActivityStartTimes(
+            listOf(
+                activity("museum", "09:00", "60 minutes", fixed = true),
+                activity("restaurant", "10:00", "45 minutes").copy(transitionMinutes = 20)
+            )
+        ) { it.fixedTime }
+
+        assertEquals("10:20", normalized[1].time)
     }
 
     private fun activity(
