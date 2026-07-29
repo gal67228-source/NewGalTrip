@@ -26,7 +26,7 @@ object GoogleRoutesClient {
 
     internal fun segmentsNeedingRefresh(day: TripDay): List<Int> =
         day.activities.zipWithNext().mapIndexedNotNull { index, (previous, current) ->
-            if (!current.transitionAutomatic) {
+            if (!current.transitionAutomatic || current.transitionMode == "none") {
                 null
             } else {
                 val mode = resolvedTransitionMode(previous, current)
@@ -70,7 +70,7 @@ object GoogleRoutesClient {
 
         for (index in 1 until updated.size) {
             val current = updated[index]
-            if (!current.transitionAutomatic) {
+            if (!current.transitionAutomatic || current.transitionMode == "none") {
                 previous = current
                 continue
             }

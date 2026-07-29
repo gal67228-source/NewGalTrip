@@ -16,6 +16,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.text.KeyboardOptions
@@ -7185,27 +7187,34 @@ private fun QuickActivityDialog(
                             )
 
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 listOf(
                                     "auto" to "אוטומטי",
                                     "walk" to "הליכה",
                                     "transit" to "תחבורה",
-                                    "drive" to "רכב"
+                                    "drive" to "רכב",
+                                    "none" to "ללא מעבר"
                                 ).forEach { (value, title) ->
                                     FilterChip(
                                         selected = transitionMode == value,
                                         onClick = {
                                             transitionMode = value
-                                            transitionAutomatic = true
+                                            transitionAutomatic = value != "none"
+                                            if (value == "none") {
+                                                transitionMinutesText = "0"
+                                                transitionDetails = ""
+                                            }
                                         },
                                         label = { Text(title) }
                                     )
                                 }
                             }
 
-                            Row(
+                            if (transitionMode != "none") Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -7222,7 +7231,13 @@ private fun QuickActivityDialog(
                                 )
                             }
 
-                            if (!transitionAutomatic) {
+                            if (transitionMode == "none") {
+                                Text(
+                                    "לא יחושב זמן מעבר לפעילות הזו.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                            } else if (!transitionAutomatic) {
                                 OutlinedTextField(
                                     value = transitionMinutesText,
                                     onValueChange = {
@@ -7360,13 +7375,13 @@ private fun QuickActivityDialog(
                             latitude = selectedLatitude,
                             longitude = selectedLongitude,
                             transitionMode = transitionMode,
-                            transitionMinutes =
+                            transitionMinutes = if (transitionMode == "none") 0 else
                                 transitionMinutesText.toIntOrNull()
                                     ?.coerceAtLeast(0)
                                     ?: 0,
-                            transitionAutomatic =
+                            transitionAutomatic = transitionMode != "none" &&
                                 transitionAutomatic,
-                            transitionDetails =
+                            transitionDetails = if (transitionMode == "none") "" else
                                 transitionDetails.trim()
                         )
                     )
@@ -7521,6 +7536,8 @@ private fun resolveTransitionMinutes(
     previous: ActivityItem,
     current: ActivityItem
 ): Int {
+    if (current.transitionMode == "none") return 0
+
     if (!current.transitionAutomatic) {
         return current.transitionMinutes.coerceAtLeast(0)
     }
@@ -7642,6 +7659,7 @@ private fun transitionModeIcon(mode: String): String =
         "walk" -> "🚶"
         "drive" -> "🚗"
         "transit" -> "🚌"
+        "none" -> "⏭️"
         else -> "➡️"
     }
 
@@ -7650,6 +7668,7 @@ private fun transitionModeLabel(mode: String): String =
         "walk" -> "הליכה"
         "drive" -> "נסיעה ברכב"
         "transit" -> "תחבורה ציבורית"
+        "none" -> "ללא חישוב מעבר"
         else -> "מעבר"
     }
 
@@ -7989,27 +8008,34 @@ private fun ActivityEditorDialog(
                         )
 
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
                             listOf(
                                 "auto" to "אוטומטי",
                                 "walk" to "הליכה",
                                 "transit" to "תחבורה",
-                                "drive" to "רכב"
+                                "drive" to "רכב",
+                                "none" to "ללא מעבר"
                             ).forEach { (value, title) ->
                                 FilterChip(
                                     selected = transitionMode == value,
                                     onClick = {
                                         transitionMode = value
-                                        transitionAutomatic = true
+                                        transitionAutomatic = value != "none"
+                                        if (value == "none") {
+                                            transitionMinutesText = "0"
+                                            transitionDetails = ""
+                                        }
                                     },
                                     label = { Text(title) }
                                 )
                             }
                         }
 
-                        Row(
+                        if (transitionMode != "none") Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -8026,7 +8052,13 @@ private fun ActivityEditorDialog(
                             )
                         }
 
-                        if (!transitionAutomatic) {
+                        if (transitionMode == "none") {
+                            Text(
+                                "לא יחושב זמן מעבר לפעילות הזו.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        } else if (!transitionAutomatic) {
                             OutlinedTextField(
                                 value = transitionMinutesText,
                                 onValueChange = {
@@ -8059,7 +8091,7 @@ private fun ActivityEditorDialog(
                                 maxLines = 4,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                        } else {
+                        } else if (transitionMode != "none") {
                             OutlinedTextField(
                                 value = transitionDetails,
                                 onValueChange = {
@@ -8120,13 +8152,13 @@ private fun ActivityEditorDialog(
                             latitude = if (routeLocationChanged) null else activity.latitude,
                             longitude = if (routeLocationChanged) null else activity.longitude,
                             transitionMode = transitionMode,
-                            transitionMinutes =
+                            transitionMinutes = if (transitionMode == "none") 0 else
                                 transitionMinutesText.toIntOrNull()
                                     ?.coerceAtLeast(0)
                                     ?: 0,
-                            transitionAutomatic =
+                            transitionAutomatic = transitionMode != "none" &&
                                 transitionAutomatic,
-                            transitionDetails =
+                            transitionDetails = if (transitionMode == "none") "" else
                                 transitionDetails.trim(),
                             routeCacheKey = if (
                                 activity.transitionAutomatic != transitionAutomatic
@@ -8145,12 +8177,12 @@ private fun ActivityEditorDialog(
                                 Uri.encode(location.ifBlank { name }),
                             fixedTime = fixedTime,
                             transitionMode = transitionMode,
-                            transitionMinutes =
+                            transitionMinutes = if (transitionMode == "none") 0 else
                                 transitionMinutesText.toIntOrNull()
                                     ?.coerceAtLeast(0)
                                     ?: 0,
-                            transitionAutomatic = transitionAutomatic,
-                            transitionDetails = transitionDetails.trim()
+                            transitionAutomatic = transitionMode != "none" && transitionAutomatic,
+                            transitionDetails = if (transitionMode == "none") "" else transitionDetails.trim()
                         )
                     }
                     onConfirm(updatedActivity)
