@@ -4950,6 +4950,7 @@ private fun DayDetailScreen(
     val timelineScope = rememberCoroutineScope()
     var routesRefreshing by remember(day.id) { mutableStateOf(false) }
     var routesMessage by remember(day.id) { mutableStateOf<String?>(null) }
+    var lastRouteRefreshRequest by remember(day.id) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(day.activities, draggingActivityId) {
         if (draggingActivityId == null) {
@@ -4983,6 +4984,10 @@ private fun DayDetailScreen(
             draggingActivityId == null &&
             GoogleRoutesClient.needsRefresh(day)
         ) {
+            // Mark the immutable route input before starting I/O. Route-result
+            // state can arrive through local and cloud updates more than once;
+            // none of those updates should launch the same request again.
+            lastRouteRefreshRequest = routeInputSignature
             routesRefreshing = true
             val routedDay = GoogleRoutesClient.refreshDay(day)
             routesRefreshing = false

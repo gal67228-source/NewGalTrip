@@ -68,7 +68,6 @@ object GoogleRoutesClient {
             val result = fetchRoute(previous, current, mode, cacheKey)
             if (result != null) {
                 updated[index] = current.copy(
-                    transitionMode = mode,
                     transitionMinutes = result.durationMinutes,
                     transitionDetails = result.details,
                     routeDistanceMeters = result.distanceMeters,
