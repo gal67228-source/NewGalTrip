@@ -53,10 +53,15 @@ internal fun preserveActivityOrder(
 ): List<ActivityItem> {
     val generatedById = generated.associateBy { it.id }
     val previousIds = previous.mapTo(mutableSetOf()) { it.id }
-    val result = previous.mapNotNull { generatedById[it.id] }.toMutableList()
+    val result = previous.mapNotNull { activity ->
+        generatedById[activity.id]
+            ?.takeUnless { it.isAutomaticItineraryActivity() }
+    }.toMutableList()
 
     generated
-        .filterNot { it.id in previousIds }
+        .filter { activity ->
+            activity.id !in previousIds || activity.isAutomaticItineraryActivity()
+        }
         .sortedBy { itineraryTimeMinutes(it.time) ?: Int.MAX_VALUE }
         .forEach { activity ->
             val minutes = itineraryTimeMinutes(activity.time) ?: Int.MAX_VALUE
@@ -68,6 +73,12 @@ internal fun preserveActivityOrder(
 
     return result
 }
+
+private fun ActivityItem.isAutomaticItineraryActivity(): Boolean =
+    id.startsWith(AUTO_FLIGHT_PREFIX) ||
+        id.startsWith(AUTO_MEAL_PREFIX) ||
+        id.startsWith(AUTO_HOTEL_TRANSFER_PREFIX) ||
+        id.startsWith(AUTO_HOTEL_STAY_PREFIX)
 
 private fun addFlightSkeleton(
     trip: Trip,
