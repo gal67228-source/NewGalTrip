@@ -1218,24 +1218,7 @@ private fun activityClockMinutesToday(value: String): Int? {
 }
 
 private fun activityDurationMinutesToday(value: String): Int {
-    val normalized = value.trim().lowercase()
-
-    val hours = Regex("""(\d+(?:\.\d+)?)\s*(?:שעות|שעה|hours?|hrs?|h)""")
-        .find(normalized)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toDoubleOrNull()
-        ?: 0.0
-
-    val minutes = Regex("""(\d+)\s*(?:דקות|דקה|minutes?|mins?|m)""")
-        .find(normalized)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-        ?: 0
-
-    val total = (hours * 60).toInt() + minutes
-    return if (total > 0) total else 60
+    return parseActivityDurationMinutes(value)
 }
 
 private fun activityTimeRangeToday(
