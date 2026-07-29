@@ -84,6 +84,33 @@ class GoogleRoutesClientCacheTest {
         )
     }
 
+    @Test
+    fun olderCloudSnapshotDoesNotRemoveCalculatedTransition() {
+        val local = activity("b", "B", 47.2, 19.2).copy(
+            transitionMinutes = 18,
+            transitionDetails = "walk north",
+            routeDistanceMeters = 1400,
+            routeSource = "google",
+            routeStatus = "cached",
+            routeCacheKey = "route-key",
+            routeUpdatedAt = 200L
+        )
+        val staleRemote = local.copy(
+            transitionMinutes = 0,
+            transitionDetails = "",
+            routeDistanceMeters = 0,
+            routeSource = "estimate",
+            routeStatus = "",
+            routeCacheKey = "",
+            routeUpdatedAt = 100L
+        )
+
+        assertEquals(
+            local,
+            GoogleRoutesClient.keepNewerLocalRoute(local, staleRemote)
+        )
+    }
+
     private fun cachedDestination(
         previous: ActivityItem,
         current: ActivityItem

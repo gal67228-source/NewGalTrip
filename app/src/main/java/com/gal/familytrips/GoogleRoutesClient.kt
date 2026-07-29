@@ -40,6 +40,26 @@ object GoogleRoutesClient {
     internal fun needsRefresh(day: TripDay): Boolean =
         segmentsNeedingRefresh(day).isNotEmpty()
 
+    internal fun keepNewerLocalRoute(
+        local: ActivityItem,
+        remote: ActivityItem
+    ): ActivityItem {
+        if (
+            local.routeCacheKey.isBlank() ||
+            local.routeUpdatedAt <= remote.routeUpdatedAt
+        ) return remote
+
+        return remote.copy(
+            transitionMinutes = local.transitionMinutes,
+            transitionDetails = local.transitionDetails,
+            routeDistanceMeters = local.routeDistanceMeters,
+            routeSource = local.routeSource,
+            routeStatus = local.routeStatus,
+            routeCacheKey = local.routeCacheKey,
+            routeUpdatedAt = local.routeUpdatedAt
+        )
+    }
+
     suspend fun refreshDay(day: TripDay): TripDay = withContext(Dispatchers.IO) {
         if (!isConfigured() || day.activities.size < 2) {
             return@withContext day
