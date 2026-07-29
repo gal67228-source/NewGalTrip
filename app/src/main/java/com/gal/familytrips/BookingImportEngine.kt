@@ -1,5 +1,7 @@
 package com.gal.familytrips
 
+import java.time.DateTimeException
+import java.time.LocalDate
 import java.util.Locale
 import java.util.UUID
 
@@ -13,7 +15,7 @@ object BookingImportEngine {
         ).find(text)?.groupValues?.getOrNull(1).orEmpty()
         val dates = Regex(
             "\\b(20\\d{2}[-/.]\\d{1,2}[-/.]\\d{1,2}|\\d{1,2}[-/.]\\d{1,2}[-/.]20\\d{2})\\b"
-        ).findAll(text).map { normalizeDate(it.value) }.distinct().toList()
+        ).findAll(text).mapNotNull { normalizeDate(it.value) }.distinct().toList()
         val times = Regex("\\b([01]?\\d|2[0-3]):[0-5]\\d\\b")
             .findAll(text).map { it.value.padStart(5, '0') }.distinct().toList()
         val result = mutableListOf<BookingImportCandidate>()
@@ -138,12 +140,27 @@ object BookingImportEngine {
         (base + values.count(String::isNotBlank) * 10).coerceAtMost(95)
     private fun compact(text: String) = text.lines().map(String::trim)
         .filter(String::isNotBlank).take(10).joinToString(" · ").take(700)
-    private fun normalizeDate(value: String): String {
+    private fun normalizeDate(value: String): String? {
         val parts = value.replace("/", "-").replace(".", "-").split("-")
-        return when {
-            parts.size != 3 -> value
-            parts[0].length == 4 -> "${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}"
-            else -> "${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}"
+        if (parts.size != 3) return null
+
+        val year: Int
+        val month: Int
+        val day: Int
+        if (parts[0].length == 4) {
+            year = parts[0].toIntOrNull() ?: return null
+            month = parts[1].toIntOrNull() ?: return null
+            day = parts[2].toIntOrNull() ?: return null
+        } else {
+            day = parts[0].toIntOrNull() ?: return null
+            month = parts[1].toIntOrNull() ?: return null
+            year = parts[2].toIntOrNull() ?: return null
+        }
+
+        return try {
+            LocalDate.of(year, month, day).toString()
+        } catch (_: DateTimeException) {
+            null
         }
     }
     private fun findAddress(text: String) = text.lines().map(String::trim)
