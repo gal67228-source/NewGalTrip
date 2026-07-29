@@ -861,7 +861,22 @@ fun GalTripsApp(
                                                             activities =
                                                                 cloudItems
                                                                     .map {
-                                                                        it.activity
+                                                                        cloud ->
+                                                                        val local =
+                                                                            day.activities
+                                                                                .firstOrNull {
+                                                                                    it.id ==
+                                                                                        cloud.activity.id
+                                                                                }
+                                                                        if (local == null) {
+                                                                            cloud.activity
+                                                                        } else {
+                                                                            GoogleRoutesClient
+                                                                                .keepNewerLocalRoute(
+                                                                                    local,
+                                                                                    cloud.activity
+                                                                                )
+                                                                        }
                                                                     }
                                                         )
                                                     } else {
