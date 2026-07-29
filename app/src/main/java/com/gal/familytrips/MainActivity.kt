@@ -4966,8 +4966,7 @@ private fun DayDetailScreen(
         day.activities.joinToString("|") {
             listOf(
                 it.id,
-                it.time,
-                it.location.trim(),
+                it.location.ifBlank { it.name }.trim(),
                 it.latitude?.toString().orEmpty(),
                 it.longitude?.toString().orEmpty(),
                 it.transitionMode,
@@ -4985,14 +4984,13 @@ private fun DayDetailScreen(
         ) {
             routesRefreshing = true
             val routedDay = GoogleRoutesClient.refreshDay(day)
-            val normalized = validateAndNormalizeDayTimeline(routedDay)
             routesRefreshing = false
 
-            if (normalized.activities != day.activities) {
+            if (routedDay.activities != day.activities) {
                 onTripChange(
                     trip.copy(
                         days = trip.days.map {
-                            if (it.id == day.id) normalized else it
+                            if (it.id == day.id) routedDay else it
                         }
                     )
                 )
@@ -7372,8 +7370,7 @@ private fun activityTimeMinutes(value: String): Int? {
 }
 
 private fun nextSuggestedTime(day: TripDay): String {
-    val recalculated = recalculateActivityTimes(day.activities)
-    val last = recalculated.lastOrNull() ?: return "09:00"
+    val last = day.activities.lastOrNull() ?: return "09:00"
     val start = activityTimeMinutes(last.time) ?: return "09:00"
     val end = (start + activityDurationMinutes(last.duration))
         .coerceAtMost(23 * 60 + 59)
@@ -7383,77 +7380,15 @@ private fun nextSuggestedTime(day: TripDay): String {
 private fun validateAndNormalizeDayTimeline(
     day: TripDay
 ): TripDay {
-    return day.copy(
-        activities = recalculateActivityTimes(day.activities)
-    )
+    // User-entered times are authoritative. Timeline validation is presented as
+    // a warning by findTimelineConflict; it must never silently move activities.
+    return day
 }
 
 private fun validateAndNormalizeTripDays(
     days: List<TripDay>
 ): List<TripDay> {
     return days.map(::validateAndNormalizeDayTimeline)
-}
-
-private fun recalculateActivityTimes(
-    activities: List<ActivityItem>
-): List<ActivityItem> {
-    if (activities.isEmpty()) return emptyList()
-
-    val timelineStart = activities
-        .mapNotNull { activityTimeMinutes(it.time) }
-        .minOrNull()
-        ?: 9 * 60
-
-    var cursor = timelineStart
-    var previous: ActivityItem? = null
-
-    return activities.mapIndexed { index, activity ->
-        val transition = if (index == 0 || previous == null) {
-            0
-        } else {
-            resolveTransitionMinutes(
-                previous = previous!!,
-                current = activity
-            )
-        }
-
-        if (index > 0) {
-            cursor += transition
-        }
-
-        val originalStart =
-            activityTimeMinutes(activity.time)
-        val fixed =
-            isFixedScheduleActivity(activity)
-
-        val normalizedActivity = when {
-            fixed && originalStart != null -> {
-                activity.copy(
-                    time = minutesToClock(originalStart),
-                    transitionMinutes = transition
-                )
-            }
-
-            else -> {
-                activity.copy(
-                    time = minutesToClock(cursor),
-                    transitionMinutes = transition
-                )
-            }
-        }
-
-        val effectiveStart =
-            activityTimeMinutes(normalizedActivity.time)
-                ?: cursor
-
-        cursor = effectiveStart +
-            activityDurationMinutes(
-                normalizedActivity.duration
-            )
-
-        previous = normalizedActivity
-        normalizedActivity
-    }
 }
 
 private fun suggestedTimeAtIndex(
@@ -7519,8 +7454,7 @@ private fun findTimelineConflict(
         val knownPreviousEnd = previousEnd
         if (
             knownPreviousEnd != null &&
-            start < requiredStart &&
-            isFixedScheduleActivity(activity)
+            start < requiredStart
         ) {
             return buildString {
                 append(previousName)
@@ -7533,9 +7467,9 @@ private fun findTimelineConflict(
                 }
                 append(", אבל ")
                 append(activity.name)
-                append(" קבועה ל־")
+                append(" מתחילה ב־")
                 append(minutesToClock(start))
-                append(". מומלץ לקצר או להעביר את הפעילות שלפניה.")
+                append(". השעות נשמרו ללא שינוי.")
             }
         }
 
