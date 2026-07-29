@@ -6194,6 +6194,70 @@ private fun ActivityTimePickerField(
 }
 
 @Composable
+private fun ActivityDurationPickerField(
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val durationMinutes = parseActivityDurationMinutes(value)
+        .coerceIn(5, 23 * 60 + 59)
+
+    OutlinedButton(
+        onClick = {
+            android.app.TimePickerDialog(
+                context,
+                { _, hours, minutes ->
+                    val selectedMinutes = (hours * 60 + minutes)
+                        .coerceAtLeast(5)
+                    onValueChange(
+                        formatActivityDuration(selectedMinutes)
+                    )
+                },
+                durationMinutes / 60,
+                durationMinutes % 60,
+                true
+            ).apply {
+                setTitle("בחירת משך הפעילות")
+            }.show()
+        },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Text("⏱")
+        Spacer(Modifier.width(8.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                "משך הפעילות",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
+            Text(
+                value.ifBlank { "בחירת זמן" },
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+        }
+    }
+}
+
+private fun formatActivityDuration(totalMinutes: Int): String {
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return when {
+        hours == 0 -> "$minutes דקות"
+        minutes == 0 && hours == 1 -> "שעה"
+        minutes == 0 && hours == 2 -> "שעתיים"
+        minutes == 0 -> "$hours שעות"
+        hours == 1 -> "שעה ו-$minutes דקות"
+        hours == 2 -> "שעתיים ו-$minutes דקות"
+        else -> "$hours שעות ו-$minutes דקות"
+    }
+}
+
+@Composable
 private fun TimelineInsertButton(
     label: String,
     prominent: Boolean = false,
@@ -7166,12 +7230,9 @@ private fun QuickActivityDialog(
                 }
 
                 item {
-                    OutlinedTextField(
+                    ActivityDurationPickerField(
                         value = duration,
-                        onValueChange = { duration = it },
-                        label = { Text("משך") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        onValueChange = { duration = it }
                     )
                 }
 
@@ -8107,7 +8168,12 @@ private fun ActivityEditorDialog(
                         }
                     }
                 }
-                item { OutlinedTextField(duration, { duration = it }, label = { Text("משך") }) }
+                item {
+                    ActivityDurationPickerField(
+                        value = duration,
+                        onValueChange = { duration = it }
+                    )
+                }
                 item { OutlinedTextField(cost, { cost = it }, label = { Text("עלות") }) }
                 item { OutlinedTextField(notes, { notes = it }, label = { Text("הערות") }) }
                 item {

@@ -800,7 +800,6 @@ fun DocumentsModuleScreen(
                 state.pendingLinkedEntityType,
             initialLinkedEntityId =
                 state.pendingLinkedEntityId,
-            trip = trip,
             onDismiss = viewModel::dismissMetadata,
             onSave = { input ->
                 val document =
@@ -923,7 +922,6 @@ private fun DocumentMetadataDialog(
     initialCategory: String,
     initialLinkedEntityType: String,
     initialLinkedEntityId: String,
-    trip: Trip,
     onDismiss: () -> Unit,
     onSave: (DocumentMetadataInput) -> Unit
 ) {
@@ -941,17 +939,6 @@ private fun DocumentMetadataDialog(
     var date by remember { mutableStateOf("") }
     var time by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
-    var linkedType by remember(
-        initialLinkedEntityType
-    ) {
-        mutableStateOf(initialLinkedEntityType)
-    }
-    var linkedId by remember(
-        initialLinkedEntityId
-    ) {
-        mutableStateOf(initialLinkedEntityId)
-    }
-
     val categories = listOf(
         "טיסות",
         "מלונות",
@@ -962,33 +949,6 @@ private fun DocumentMetadataDialog(
         "מסמכים אישיים",
         "כללי"
     )
-
-    val links = buildList {
-        add(Triple("", "", "ללא קישור"))
-        trip.flights.forEach {
-            add(
-                Triple(
-                    "flight",
-                    it.id,
-                    "טיסה ${it.departureAirport} → ${it.arrivalAirport}"
-                )
-            )
-        }
-        trip.hotels.forEach {
-            add(Triple("hotel", it.id, it.name))
-        }
-        trip.days.forEach { day ->
-            day.activities.forEach {
-                add(
-                    Triple(
-                        "activity",
-                        it.id,
-                        it.name
-                    )
-                )
-            }
-        }
-    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1073,27 +1033,6 @@ private fun DocumentMetadataDialog(
                 }
 
                 item {
-                    Text(
-                        "קישור לפריט בטיול",
-                        fontWeight = FontWeight.Bold
-                    )
-                    links.forEach { link ->
-                        FilterChip(
-                            selected =
-                                linkedType == link.first &&
-                                    linkedId == link.second,
-                            onClick = {
-                                linkedType = link.first
-                                linkedId = link.second
-                            },
-                            label = { Text(link.third) },
-                            modifier =
-                                Modifier.padding(bottom = 4.dp)
-                        )
-                    }
-                }
-
-                item {
                     OutlinedTextField(
                         value = notes,
                         onValueChange = { notes = it },
@@ -1117,8 +1056,9 @@ private fun DocumentMetadataDialog(
                             date = date.trim(),
                             time = time.trim(),
                             linkedEntityType =
-                                linkedType,
-                            linkedEntityId = linkedId,
+                                initialLinkedEntityType,
+                            linkedEntityId =
+                                initialLinkedEntityId,
                             notes = notes.trim()
                         )
                     )
