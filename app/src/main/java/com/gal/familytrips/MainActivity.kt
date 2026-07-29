@@ -4980,7 +4980,8 @@ private fun DayDetailScreen(
             !trip.offlineMode &&
             GoogleRoutesClient.isConfigured() &&
             day.activities.size >= 2 &&
-            draggingActivityId == null
+            draggingActivityId == null &&
+            GoogleRoutesClient.needsRefresh(day)
         ) {
             routesRefreshing = true
             val routedDay = GoogleRoutesClient.refreshDay(day)
@@ -8118,23 +8119,22 @@ private fun ActivityEditorDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    onConfirm(
-                        ActivityItem(
-                            id = activity?.id ?: UUID.randomUUID().toString(),
+                    val updatedActivity = if (activity != null) {
+                        val routeLocationChanged =
+                            activity.location.ifBlank { activity.name }.trim() !=
+                                location.ifBlank { name }.trim()
+                        activity.copy(
                             time = time,
                             name = name,
                             location = location,
-                            transport = "",
-                            directions = "",
                             duration = duration,
                             cost = cost,
                             notes = notes,
                             mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
                                 Uri.encode(location.ifBlank { name }),
-                            completed = activity?.completed ?: false,
                             fixedTime = fixedTime,
-                            latitude = activity?.latitude,
-                            longitude = activity?.longitude,
+                            latitude = if (routeLocationChanged) null else activity.latitude,
+                            longitude = if (routeLocationChanged) null else activity.longitude,
                             transitionMode = transitionMode,
                             transitionMinutes =
                                 transitionMinutesText.toIntOrNull()
@@ -8143,9 +8143,33 @@ private fun ActivityEditorDialog(
                             transitionAutomatic =
                                 transitionAutomatic,
                             transitionDetails =
-                                transitionDetails.trim()
+                                transitionDetails.trim(),
+                            routeCacheKey = if (
+                                activity.transitionAutomatic != transitionAutomatic
+                            ) "" else activity.routeCacheKey
                         )
-                    )
+                    } else {
+                        ActivityItem(
+                            id = UUID.randomUUID().toString(),
+                            time = time,
+                            name = name,
+                            location = location,
+                            duration = duration,
+                            cost = cost,
+                            notes = notes,
+                            mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
+                                Uri.encode(location.ifBlank { name }),
+                            fixedTime = fixedTime,
+                            transitionMode = transitionMode,
+                            transitionMinutes =
+                                transitionMinutesText.toIntOrNull()
+                                    ?.coerceAtLeast(0)
+                                    ?: 0,
+                            transitionAutomatic = transitionAutomatic,
+                            transitionDetails = transitionDetails.trim()
+                        )
+                    }
+                    onConfirm(updatedActivity)
                 }
             ) { Text("שמירה") }
         },
