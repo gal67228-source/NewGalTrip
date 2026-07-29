@@ -4982,8 +4982,7 @@ private fun DayDetailScreen(
             GoogleRoutesClient.isConfigured() &&
             day.activities.size >= 2 &&
             draggingActivityId == null &&
-            GoogleRoutesClient.needsRefresh(day) &&
-            lastRouteRefreshRequest != routeInputSignature
+            GoogleRoutesClient.needsRefresh(day)
         ) {
             // Mark the immutable route input before starting I/O. Route-result
             // state can arrive through local and cloud updates more than once;

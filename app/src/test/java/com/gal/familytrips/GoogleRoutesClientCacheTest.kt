@@ -34,7 +34,7 @@ class GoogleRoutesClientCacheTest {
         )
         assertTrue(
             GoogleRoutesClient.needsRefresh(
-                day(origin, destination.copy(transitionMode = "walk"))
+                day(origin, destination.copy(transitionMode = "drive"))
             )
         )
     }
@@ -90,6 +90,7 @@ class GoogleRoutesClientCacheTest {
     ): ActivityItem {
         val mode = resolvedTransitionMode(previous, current)
         return current.copy(
+            transitionMode = mode,
             routeSource = "google",
             routeCacheKey = GoogleRoutesClient.routeCacheKey(previous, current, mode),
             transitionMinutes = 12
