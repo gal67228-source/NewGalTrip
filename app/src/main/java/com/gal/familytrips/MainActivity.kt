@@ -4936,7 +4936,7 @@ private fun DayDetailScreen(
 
     val orderedActivities = remember(day.id) {
         mutableStateListOf<ActivityItem>().apply {
-            addAll(day.activities)
+            addAll(validateAndNormalizeDayTimeline(day).activities)
         }
     }
     var draggingActivityId by remember(day.id) {
@@ -4969,11 +4969,16 @@ private fun DayDetailScreen(
 
     LaunchedEffect(day.activities, draggingActivityId) {
         if (draggingActivityId == null) {
-            val incomingIds = day.activities.map { it.id }
+            val normalizedIncoming =
+                validateAndNormalizeDayTimeline(day).activities
+            val incomingIds = normalizedIncoming.map { it.id }
             val localIds = orderedActivities.map { it.id }
-            if (incomingIds != localIds || day.activities != orderedActivities.toList()) {
+            if (
+                incomingIds != localIds ||
+                normalizedIncoming != orderedActivities.toList()
+            ) {
                 orderedActivities.clear()
-                orderedActivities.addAll(day.activities)
+                orderedActivities.addAll(normalizedIncoming)
             }
         }
     }
@@ -7401,9 +7406,12 @@ private fun nextSuggestedTime(day: TripDay): String {
 private fun validateAndNormalizeDayTimeline(
     day: TripDay
 ): TripDay {
-    // User-entered times are authoritative. Timeline validation is presented as
-    // a warning by findTimelineConflict; it must never silently move activities.
-    return day
+    return day.copy(
+        activities = normalizeActivityStartTimes(
+            day.activities,
+            ::isFixedScheduleActivity
+        )
+    )
 }
 
 private fun validateAndNormalizeTripDays(
@@ -7704,51 +7712,7 @@ private fun haversineDistanceKm(
 }
 
 private fun activityDurationMinutes(value: String): Int {
-    val normalized = value
-        .trim()
-        .lowercase()
-        .replace("כשעה", "שעה")
-        .replace("כ-", "")
-        .replace("כ", "")
-
-    Regex("""(\d+)\s*שעות?""")
-        .find(normalized)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-        ?.let { hours ->
-            val extraMinutes = Regex("""(\d+)\s*דקות?""")
-                .find(normalized)
-                ?.groupValues
-                ?.getOrNull(1)
-                ?.toIntOrNull()
-                ?: 0
-            return hours * 60 + extraMinutes
-        }
-
-    Regex("""(\d+)\s*דקות?""")
-        .find(normalized)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-        ?.let { return it.coerceAtLeast(5) }
-
-    Regex("""(\d+(?:\.\d+)?)\s*hours?""")
-        .find(normalized)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toDoubleOrNull()
-        ?.let { return (it * 60).toInt().coerceAtLeast(5) }
-
-    if ("שעה וחצי" in normalized) return 90
-    if ("חצי שעה" in normalized) return 30
-    if ("שעה" in normalized) return 60
-    if ("שעתיים" in normalized) return 120
-    if ("שלוש שעות" in normalized) return 180
-    if ("45" in normalized) return 45
-    if ("30" in normalized) return 30
-
-    return 60
+    return parseActivityDurationMinutes(value)
 }
 
 private fun minutesToClock(totalMinutes: Int): String {
