@@ -4924,6 +4924,13 @@ private fun DayDetailScreen(
             addAll(day.activities)
         }
     }
+
+    val timelineConflict =
+        remember(orderedActivities.toList()) {
+            findTimelineConflict(
+                orderedActivities.toList()
+            )
+        }
     var draggingActivityId by remember(day.id) {
         mutableStateOf<String?>(null)
     }
@@ -4939,13 +4946,6 @@ private fun DayDetailScreen(
     var draggedItemSizePx by remember(day.id) {
         mutableStateOf(0)
     }
-    val timelineConflict =
-        remember(orderedActivities.toList()) {
-            findTimelineConflict(
-                orderedActivities.toList()
-            )
-        }
-
     val timelineListState = rememberLazyListState()
     val timelineScope = rememberCoroutineScope()
     var routesRefreshing by remember(day.id) { mutableStateOf(false) }
