@@ -40,6 +40,17 @@ class GoogleRoutesClientCacheTest {
     }
 
     @Test
+    fun disabledTransitionNeverRequestsRouteCalculation() {
+        val origin = activity("a", "Museum", 47.1, 19.1)
+        val destination = activity("b", "Market", 47.2, 19.2).copy(
+            transitionMode = "none",
+            transitionAutomatic = true
+        )
+
+        assertFalse(GoogleRoutesClient.needsRefresh(day(origin, destination)))
+    }
+
+    @Test
     fun reorderingInvalidatesOnlyEdgesWhoseEndpointsChanged() {
         val first = activity("a", "A", 47.1, 19.1)
         val second = cachedDestination(first, activity("b", "B", 47.2, 19.2))
