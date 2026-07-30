@@ -98,7 +98,9 @@ jobs:
           ROUTES_WORKER_URL: ${{ secrets.ROUTES_WORKER_URL }}
           ROUTES_APP_TOKEN: ${{ secrets.ROUTES_APP_TOKEN }}
         run: |
-          set -o pipefail
+          set -euo pipefail
+          java -version
+          test "$(java -XshowSettings:properties -version 2>&1 | awk -F '= ' '/java.specification.version/ { print $2 }')" = "17"
           gradle --no-daemon --stacktrace clean assembleDebug 2>&1 | tee build.log
           grep -E '^e:|^w:' build.log > compiler-diagnostics.txt || true
 
