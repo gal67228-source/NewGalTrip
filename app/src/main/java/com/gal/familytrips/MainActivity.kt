@@ -66,6 +66,7 @@ import java.util.UUID
 class MainActivity : ComponentActivity() {
     private lateinit var store: TripStore
     private lateinit var cloudManager: FirebaseCloudManager
+    private lateinit var driveManager: GoogleDriveManager
     private var diffSyncCoordinator:
         DiffSyncCoordinator? = null
     private val pendingInviteCode =
@@ -75,6 +76,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         store = TripStore(this)
         cloudManager = FirebaseCloudManager(this)
+        driveManager = GoogleDriveManager(this)
         val reliableSyncQueue =
             ReliableSyncQueue(this)
         consumeInviteIntent(intent)
@@ -205,6 +207,7 @@ class MainActivity : ComponentActivity() {
                         val loaded = state!!
                         GalTripsApp(
                         state = loaded,
+                        driveManager = driveManager,
                         onStateChange = { next ->
                             val previous = state
                             state = next
@@ -623,6 +626,7 @@ private fun SettingsInfoRow(
 @Composable
 fun GalTripsApp(
     state: AppState,
+    driveManager: GoogleDriveManager,
     onStateChange: (AppState) -> Unit,
     onOpenUrl: (String) -> Unit,
     onShareTrip: (Trip) -> Unit,
@@ -1325,6 +1329,7 @@ fun GalTripsApp(
 
                 7 -> DocumentsModuleScreen(
                     trip = trip,
+                    driveManager = driveManager,
                     onTripChange = {
                         onStateChange(
                             state.replaceTrip(it)

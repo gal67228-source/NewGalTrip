@@ -43,6 +43,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 
 private data class AutomaticDocumentRequirement(
     val key: String,
@@ -320,14 +322,19 @@ private fun requirementEmoji(
 @Composable
 fun DocumentsModuleScreen(
     trip: Trip,
+    driveManager: GoogleDriveManager,
     onTripChange: (Trip) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val viewModel: DocumentsViewModel = viewModel(
-        factory = DocumentsViewModel.Factory(context)
+        factory = DocumentsViewModel.Factory(
+            context,
+            driveManager
+        )
     )
     val state by viewModel.state.collectAsState()
+    val scope = rememberCoroutineScope()
 
     val fileLauncher =
         rememberLauncherForActivityResult(
@@ -420,6 +427,22 @@ fun DocumentsModuleScreen(
         verticalArrangement =
             Arrangement.spacedBy(12.dp)
     ) {
+        if (state.cloudOperationInProgress) {
+            item {
+                Text(
+                    "שומר/מוריד את המסמך בענן…",
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        if (state.cloudError.isNotBlank()) {
+            item {
+                Text(
+                    state.cloudError,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
         item {
             Text(
                 "מסמכים והזמנות",
@@ -776,9 +799,14 @@ fun DocumentsModuleScreen(
             DocumentCard(
                 document = document,
                 onOpen = {
-                    viewModel.open(document)
+                    scope.launch {
+                        viewModel.open(document)
+                    }
                 },
                 onDelete = {
+                    scope.launch {
+                        viewModel.delete(document)
+                    }
                     onTripChange(
                         trip.copy(
                             documents = trip.documents
@@ -802,15 +830,19 @@ fun DocumentsModuleScreen(
                 state.pendingLinkedEntityId,
             onDismiss = viewModel::dismissMetadata,
             onSave = { input ->
-                val document =
-                    viewModel.createDocument(input)
-                        ?: return@DocumentMetadataDialog
-                onTripChange(
-                    trip.copy(
-                        documents =
-                            trip.documents + document
+                scope.launch {
+                    val document = viewModel.createDocument(
+                        input = input,
+                        saveToDrive = trip.cloudEnabled
                     )
-                )
+                        ?: return@launch
+                    onTripChange(
+                        trip.copy(
+                            documents =
+                                trip.documents + document
+                        )
+                    )
+                }
             }
         )
     }

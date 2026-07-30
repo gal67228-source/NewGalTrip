@@ -139,7 +139,8 @@ data class TripDocument(
     val linkedEntityId: String = "",
     val mimeType: String = "",
     val sourceType: String = "file",
-    val localCopyPath: String = ""
+    val localCopyPath: String = "",
+    val googleDriveFileId: String = ""
 )
 
 @Serializable

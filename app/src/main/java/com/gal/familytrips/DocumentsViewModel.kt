@@ -23,7 +23,9 @@ data class DocumentsUiState(
     val pendingLinkedEntityType: String = "",
     val pendingLinkedEntityId: String = "",
     val pendingBookingId: String = "",
-    val pendingSuggestedName: String = ""
+    val pendingSuggestedName: String = "",
+    val cloudOperationInProgress: Boolean = false,
+    val cloudError: String = ""
 )
 
 data class DocumentMetadataInput(
@@ -128,8 +130,9 @@ class DocumentsViewModel(
         )
     }
 
-    fun createDocument(
-        input: DocumentMetadataInput
+    suspend fun createDocument(
+        input: DocumentMetadataInput,
+        saveToDrive: Boolean
     ): TripDocument? {
         val current = mutableState.value
         val uri = current.pendingUri ?: return null
@@ -147,8 +150,9 @@ class DocumentsViewModel(
             )
         }
 
-        val result = TripDocument(
-            id = UUID.randomUUID().toString(),
+        val documentId = UUID.randomUUID().toString()
+        var result = TripDocument(
+            id = documentId,
             name = input.name,
             uri = uri.toString(),
             type = input.category,
@@ -170,20 +174,68 @@ class DocumentsViewModel(
             bookingId = current.pendingBookingId
         )
 
+        if (saveToDrive) {
+            mutableState.value = mutableState.value.copy(
+                cloudOperationInProgress = true,
+                cloudError = ""
+            )
+            val driveFileId = runCatching {
+                repository.uploadToDrive(
+                    documentId = documentId,
+                    localPath = localPath,
+                    name = input.name,
+                    mimeType = current.pendingMime
+                )
+            }.getOrElse { error ->
+                mutableState.value = mutableState.value.copy(
+                    cloudOperationInProgress = false,
+                    cloudError = error.localizedMessage
+                        ?: "שמירת המסמך בענן נכשלה"
+                )
+                return null
+            }
+            result = result.copy(
+                googleDriveFileId = driveFileId
+            )
+        }
+
         dismissMetadata()
         return result
     }
 
-    fun open(document: TripDocument) {
-        repository.open(document)
+    suspend fun open(document: TripDocument) {
+        mutableState.value = mutableState.value.copy(
+            cloudOperationInProgress = true,
+            cloudError = ""
+        )
+        runCatching {
+            repository.ensureLocalCopy(document)
+        }.onSuccess {
+            repository.open(it)
+            mutableState.value = mutableState.value.copy(
+                cloudOperationInProgress = false
+            )
+        }.onFailure { error ->
+            mutableState.value = mutableState.value.copy(
+                cloudOperationInProgress = false,
+                cloudError = error.localizedMessage
+                    ?: "הורדת המסמך מהענן נכשלה"
+            )
+        }
+    }
+
+    suspend fun delete(document: TripDocument) {
+        runCatching { repository.deleteDriveCopy(document) }
     }
 
     class Factory(
-        context: Context
+        context: Context,
+        driveManager: GoogleDriveManager
     ) : ViewModelProvider.Factory {
         private val repository =
             DocumentRepository(
-                context.applicationContext
+                context.applicationContext,
+                driveManager
             )
 
         @Suppress("UNCHECKED_CAST")
