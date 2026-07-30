@@ -684,7 +684,9 @@ fun DocumentsModuleScreen(
                                     )
                                     TextButton(
                                         onClick = {
-                                            viewModel.open(document)
+                                            scope.launch {
+                                                viewModel.open(document)
+                                            }
                                         }
                                     ) {
                                         Text("פתיחה")
