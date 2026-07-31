@@ -63,7 +63,8 @@ private data class AutomaticDocumentRequirement(
     val linkedEntityType: String = "",
     val linkedEntityId: String = "",
     val bookingId: String = "",
-    val suggestedName: String = title
+    val suggestedName: String = title,
+    val perTraveler: Boolean = false
 )
 
 private fun ActivityItem.requiresAttractionDocument(): Boolean {
@@ -165,7 +166,8 @@ private fun automaticDocumentRequirements(
             description =
                 "צרפו צילום דרכון לכל נוסע",
             category = "מסמכים אישיים",
-            suggestedName = "דרכון"
+            suggestedName = "דרכון",
+            perTraveler = true
         ),
         AutomaticDocumentRequirement(
             key = "general-travel-insurance",
@@ -206,7 +208,8 @@ private fun automaticDocumentRequirements(
                 "טיסה ${flight.flightNumber}"
             } else {
                 "אישור טיסה ${flight.departureAirport}-${flight.arrivalAirport}"
-            }
+            },
+            perTraveler = true
         )
     }
 
@@ -335,6 +338,7 @@ fun DocumentsModuleScreen(
     )
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
+    var selectedTraveler by remember { mutableStateOf("") }
 
     val fileLauncher =
         rememberLauncherForActivityResult(
@@ -594,7 +598,9 @@ fun DocumentsModuleScreen(
                 key = { "requirement-${it.key}" }
             ) { requirement ->
                 val attached = documentsFor(requirement)
-                val completed = attached.isNotEmpty()
+                val completed = if (requirement.perTraveler && trip.travelers.isNotEmpty()) {
+                    trip.travelers.all { traveler -> attached.any { it.passengerName == traveler.name } }
+                } else attached.isNotEmpty()
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -716,7 +722,28 @@ fun DocumentsModuleScreen(
                             }
                         }
 
-                        OutlinedButton(
+                        if (requirement.perTraveler && trip.travelers.isNotEmpty()) {
+                            trip.travelers.forEach { traveler ->
+                                val hasDocument = attached.any { it.passengerName == traveler.name }
+                                OutlinedButton(
+                                    onClick = {
+                                        selectedTraveler = traveler.name
+                                        viewModel.prepareRequirement(
+                                            requirement.key,
+                                            "${requirement.suggestedName} - ${traveler.name}",
+                                            requirement.category,
+                                            requirement.linkedEntityType,
+                                            requirement.linkedEntityId,
+                                            requirement.bookingId
+                                        )
+                                        fileLauncher.launch(arrayOf("application/pdf", "image/*"))
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text(if (hasDocument) "החלפה / הוספה עבור ${traveler.name}" else "צירוף עבור ${traveler.name}") }
+                            }
+                        }
+
+                        if (!requirement.perTraveler || trip.travelers.isEmpty()) OutlinedButton(
                             onClick = {
                                 viewModel.prepareRequirement(
                                     requirementKey =
@@ -830,6 +857,8 @@ fun DocumentsModuleScreen(
                 state.pendingLinkedEntityType,
             initialLinkedEntityId =
                 state.pendingLinkedEntityId,
+            travelerNames = trip.travelers.map { it.name },
+            initialTravelerName = selectedTraveler,
             onDismiss = viewModel::dismissMetadata,
             onSave = { input ->
                 scope.launch {
@@ -844,6 +873,7 @@ fun DocumentsModuleScreen(
                                 trip.documents + document
                         )
                     )
+                    selectedTraveler = ""
                 }
             }
         )
@@ -956,6 +986,8 @@ private fun DocumentMetadataDialog(
     initialCategory: String,
     initialLinkedEntityType: String,
     initialLinkedEntityId: String,
+    travelerNames: List<String>,
+    initialTravelerName: String,
     onDismiss: () -> Unit,
     onSave: (DocumentMetadataInput) -> Unit
 ) {
@@ -973,6 +1005,7 @@ private fun DocumentMetadataDialog(
     var date by remember { mutableStateOf("") }
     var time by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var passengerName by remember(initialTravelerName) { mutableStateOf(initialTravelerName) }
     val categories = listOf(
         "טיסות",
         "מלונות",
@@ -995,6 +1028,21 @@ private fun DocumentMetadataDialog(
                 verticalArrangement =
                     Arrangement.spacedBy(12.dp)
             ) {
+                item {
+                    if (travelerNames.isNotEmpty()) {
+                        Text("נוסע/ת", fontWeight = FontWeight.Bold)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            items(travelerNames) { traveler ->
+                                FilterChip(
+                                    selected = passengerName == traveler,
+                                    onClick = { passengerName = traveler },
+                                    label = { Text(traveler) }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 item {
                     OutlinedTextField(
                         value = name,
@@ -1093,7 +1141,8 @@ private fun DocumentMetadataDialog(
                                 initialLinkedEntityType,
                             linkedEntityId =
                                 initialLinkedEntityId,
-                            notes = notes.trim()
+                            notes = notes.trim(),
+                            passengerName = passengerName
                         )
                     )
                 }

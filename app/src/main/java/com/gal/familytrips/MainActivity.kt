@@ -158,7 +158,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(Unit) {
-                    cloudManager.currentProfile()?.let {
+                    cloudManager.restoreSignedInProfile()?.let {
                         loadAccount(it)
                     }
                     authLoading = false

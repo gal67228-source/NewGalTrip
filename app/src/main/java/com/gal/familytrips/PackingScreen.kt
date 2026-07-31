@@ -26,6 +26,7 @@ fun PackingScreen(
 ) {
     var showAddItem by remember { mutableStateOf(false) }
     var showAddCategory by remember { mutableStateOf(false) }
+    var showTravelers by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<PackingItem?>(null) }
     var selectedCategory by remember { mutableStateOf("הכול") }
 
@@ -123,6 +124,14 @@ fun PackingScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+                SoftActionButton(
+                    text = if (trip.travelers.isEmpty()) "הוספת נוסעים" else "נוסעים (${trip.travelers.size})",
+                    emoji = "👨‍👩‍👧‍👦",
+                    onClick = { showTravelers = true },
+                    container = CardWhite,
+                    contentColor = Lavender,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
@@ -207,6 +216,7 @@ fun PackingScreen(
             title = "פריט חדש",
             item = null,
             categories = categories,
+            defaultCategory = selectedCategory.takeUnless { it == "הכול" },
             onDismiss = { showAddItem = false },
             onConfirm = { newItem ->
                 onTripChange(
@@ -238,6 +248,7 @@ fun PackingScreen(
             title = "עריכת פריט",
             item = item,
             categories = categories,
+            defaultCategory = null,
             onDismiss = { editing = null },
             onConfirm = { updated ->
                 onTripChange(
@@ -249,6 +260,17 @@ fun PackingScreen(
                     )
                 )
                 editing = null
+            }
+        )
+    }
+
+    if (showTravelers) {
+        TravelersDialog(
+            travelers = trip.travelers,
+            onDismiss = { showTravelers = false },
+            onSave = { travelers ->
+                onTripChange(PersonalizedPacking.apply(trip.copy(travelers = travelers)))
+                showTravelers = false
             }
         )
     }
@@ -285,6 +307,9 @@ private fun PackingItemCard(
                     fontWeight = FontWeight.Bold,
                     color = if (item.packed) Color(0xFF3B6F55) else Navy
                 )
+                if (item.travelerName.isNotBlank()) {
+                    Text("עבור ${item.travelerName}", style = MaterialTheme.typography.bodySmall, color = Navy)
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(item.category, style = MaterialTheme.typography.labelSmall, color = Lavender)
                     if (item.quantity > 1) {
@@ -314,12 +339,13 @@ private fun PackingEditorDialog(
     title: String,
     item: PackingItem?,
     categories: List<String>,
+    defaultCategory: String?,
     onDismiss: () -> Unit,
     onConfirm: (PackingItem) -> Unit
 ) {
     var name by remember(item?.id) { mutableStateOf(item?.name.orEmpty()) }
     var category by remember(item?.id, categories) {
-        mutableStateOf(item?.category ?: categories.firstOrNull() ?: "כללי")
+        mutableStateOf(item?.category ?: defaultCategory ?: categories.firstOrNull() ?: "כללי")
     }
     var categoryMenuOpen by remember { mutableStateOf(false) }
     var quantityText by remember(item?.id) { mutableStateOf((item?.quantity ?: 1).toString()) }
@@ -387,7 +413,10 @@ private fun PackingEditorDialog(
                                 category = category,
                                 packed = item?.packed ?: false,
                                 quantity = quantityText.toIntOrNull()?.coerceAtLeast(1) ?: 1,
-                                notes = notes.trim()
+                                notes = notes.trim(),
+                                travelerId = item?.travelerId.orEmpty(),
+                                travelerName = item?.travelerName.orEmpty(),
+                                automaticallyGenerated = item?.automaticallyGenerated ?: false
                             )
                         )
                     }
@@ -397,6 +426,53 @@ private fun PackingEditorDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("ביטול") }
         }
+    )
+}
+
+@Composable
+private fun TravelersDialog(
+    travelers: List<TripTraveler>,
+    onDismiss: () -> Unit,
+    onSave: (List<TripTraveler>) -> Unit
+) {
+    var draft by remember(travelers) { mutableStateOf(travelers) }
+    var name by remember { mutableStateOf("") }
+    var age by remember { mutableStateOf("") }
+    var gender by remember { mutableStateOf("לא צוין") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("מי נוסע לטיול?") },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 500.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(draft, key = { it.id }) { traveler ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${traveler.name} · גיל ${traveler.age} · ${traveler.gender}", modifier = Modifier.weight(1f))
+                        IconButton(onClick = { draft = draft.filterNot { it.id == traveler.id } }) {
+                            SmallDeleteIcon(Modifier.size(26.dp))
+                        }
+                    }
+                }
+                item {
+                    OutlinedTextField(name, { name = it }, label = { Text("שם") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(age, { age = it.filter(Char::isDigit) }, label = { Text("גיל") }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("נקבה", "זכר", "לא צוין").forEach { value ->
+                            FilterChip(selected = gender == value, onClick = { gender = value }, label = { Text(value) })
+                        }
+                    }
+                    OutlinedButton(
+                        enabled = name.isNotBlank() && age.toIntOrNull() != null,
+                        onClick = {
+                            draft = draft + TripTraveler(UUID.randomUUID().toString(), name.trim(), age.toInt(), gender)
+                            name = ""; age = ""; gender = "לא צוין"
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("הוספת נוסע/ת") }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(draft) }) { Text("שמירה ויצירת רשימה") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ביטול") } }
     )
 }
 

@@ -150,7 +150,18 @@ data class PackingItem(
     val category: String = "כללי",
     val packed: Boolean = false,
     val quantity: Int = 1,
-    val notes: String = ""
+    val notes: String = "",
+    val travelerId: String = "",
+    val travelerName: String = "",
+    val automaticallyGenerated: Boolean = false
+)
+
+@Serializable
+data class TripTraveler(
+    val id: String,
+    val name: String,
+    val age: Int,
+    val gender: String = "לא צוין"
 )
 
 @Serializable
@@ -194,6 +205,7 @@ data class Trip(
     val documents: List<TripDocument> = emptyList(),
     val packingItems: List<PackingItem> = emptyList(),
     val packingCategories: List<String> = emptyList(),
+    val travelers: List<TripTraveler> = emptyList(),
     val offlineMode: Boolean = false,
     val destinationStays: List<DestinationStay> = emptyList(),
     val flights: List<Flight> = emptyList(),

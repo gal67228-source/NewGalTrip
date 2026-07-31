@@ -36,7 +36,8 @@ data class DocumentMetadataInput(
     val time: String,
     val linkedEntityType: String,
     val linkedEntityId: String,
-    val notes: String
+    val notes: String,
+    val passengerName: String = ""
 )
 
 class DocumentsViewModel(
@@ -171,7 +172,8 @@ class DocumentsViewModel(
             localCopyPath = localPath,
             requirementKey =
                 current.pendingRequirementKey,
-            bookingId = current.pendingBookingId
+            bookingId = current.pendingBookingId,
+            passengerName = input.passengerName
         )
 
         if (saveToDrive) {
