@@ -51,19 +51,45 @@ class FirebaseCloudManager(
         )
     }
 
-    /** Firebase Auth persists the user locally; a transient refresh failure must not sign them out. */
-    suspend fun restoreSignedInProfile(): CloudUserProfile? {
-        val persistedUser = auth.currentUser ?: return null
-        runCatching { persistedUser.reload().await() }
-        return currentProfile()
+    /**
+     * Restores Firebase's persisted session, or silently rebuilds it from an
+     * already-authorized Google account when Firebase has lost its local token.
+     */
+    suspend fun restoreSignedInProfile(
+        hadSignedInAccount: Boolean
+    ): CloudUserProfile? {
+        auth.currentUser?.let { persistedUser ->
+            // A network failure while refreshing must not turn a valid local
+            // Firebase session into a forced interactive sign-in.
+            runCatching { persistedUser.reload().await() }
+            currentProfile()?.let { return it }
+        }
+
+        if (!hadSignedInAccount) return null
+
+        return runCatching {
+            val silentOption =
+                GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(true)
+                    .setServerClientId(serverClientId())
+                    .setAutoSelectEnabled(true)
+                    .build()
+            val request =
+                GetCredentialRequest.Builder()
+                    .addCredentialOption(silentOption)
+                    .build()
+            val credential = credentialManager.getCredential(
+                context = activity,
+                request = request
+            ).credential
+
+            signInToFirebase(credential)
+        }.getOrNull()
     }
 
     suspend fun signInWithGoogle():
         CloudUserProfile {
-        val serverClientId =
-            activity.getString(
-                R.string.default_web_client_id
-            )
+        val serverClientId = serverClientId()
 
         val credential = try {
             val googleIdOption =
@@ -111,6 +137,12 @@ class FirebaseCloudManager(
             ).credential
         }
 
+        return signInToFirebase(credential)
+    }
+
+    private suspend fun signInToFirebase(
+        credential: androidx.credentials.Credential
+    ): CloudUserProfile {
         if (
             credential !is CustomCredential ||
             credential.type !=
@@ -142,6 +174,9 @@ class FirebaseCloudManager(
                 "ההתחברות ל-Google נכשלה"
             )
     }
+
+    private fun serverClientId(): String =
+        activity.getString(R.string.default_web_client_id)
 
     fun signOut() {
         auth.signOut()
