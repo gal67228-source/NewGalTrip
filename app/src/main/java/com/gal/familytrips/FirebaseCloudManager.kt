@@ -51,6 +51,13 @@ class FirebaseCloudManager(
         )
     }
 
+    /** Firebase Auth persists the user locally; a transient refresh failure must not sign them out. */
+    suspend fun restoreSignedInProfile(): CloudUserProfile? {
+        val persistedUser = auth.currentUser ?: return null
+        runCatching { persistedUser.reload().await() }
+        return currentProfile()
+    }
+
     suspend fun signInWithGoogle():
         CloudUserProfile {
         val serverClientId =
