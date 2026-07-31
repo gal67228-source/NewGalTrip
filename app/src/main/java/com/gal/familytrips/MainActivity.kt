@@ -158,8 +158,22 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(Unit) {
-                    cloudManager.restoreSignedInProfile()?.let {
-                        loadAccount(it)
+                    val local = store.load()
+                    state = local
+                    val restoredProfile =
+                        cloudManager.restoreSignedInProfile(
+                            hadSignedInAccount =
+                                local.currentUser != null
+                        )
+                    if (restoredProfile != null) {
+                        loadAccount(restoredProfile)
+                    } else if (local.currentUser != null) {
+                        val signedOutState = local.copy(
+                            currentUser = null,
+                            localMode = false
+                        )
+                        store.save(signedOutState)
+                        state = signedOutState
                     }
                     authLoading = false
                 }

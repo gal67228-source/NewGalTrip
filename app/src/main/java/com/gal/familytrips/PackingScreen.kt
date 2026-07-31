@@ -439,20 +439,63 @@ private fun TravelersDialog(
     var name by remember { mutableStateOf("") }
     var age by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf("לא צוין") }
+    var editingTravelerId by remember { mutableStateOf<String?>(null) }
+
+    fun clearEditor() {
+        editingTravelerId = null
+        name = ""
+        age = ""
+        gender = "לא צוין"
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("מי נוסע לטיול?") },
         text = {
             LazyColumn(modifier = Modifier.heightIn(max = 500.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    Text(
+                        "נוסעים קיימים (${draft.size})",
+                        fontWeight = FontWeight.Bold,
+                        color = Navy
+                    )
+                    if (draft.isEmpty()) {
+                        Text("עדיין לא נוספו נוסעים", color = TextSecondary)
+                    }
+                }
                 items(draft, key = { it.id }) { traveler ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${traveler.name} · גיל ${traveler.age} · ${traveler.gender}", modifier = Modifier.weight(1f))
-                        IconButton(onClick = { draft = draft.filterNot { it.id == traveler.id } }) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SoftLavender),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${traveler.name} · גיל ${traveler.age} · ${traveler.gender}", modifier = Modifier.weight(1f))
+                            IconButton(onClick = {
+                                editingTravelerId = traveler.id
+                                name = traveler.name
+                                age = traveler.age.toString()
+                                gender = traveler.gender
+                            }) {
+                                SmallEditIcon(Modifier.size(26.dp))
+                            }
+                            IconButton(onClick = {
+                                draft = draft.filterNot { it.id == traveler.id }
+                                if (editingTravelerId == traveler.id) clearEditor()
+                            }) {
                             SmallDeleteIcon(Modifier.size(26.dp))
+                            }
                         }
                     }
                 }
                 item {
+                    HorizontalDivider()
+                    Text(
+                        if (editingTravelerId == null) "הוספת נוסע/ת" else "עריכת נוסע/ת",
+                        fontWeight = FontWeight.Bold
+                    )
                     OutlinedTextField(name, { name = it }, label = { Text("שם") }, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(age, { age = it.filter(Char::isDigit) }, label = { Text("גיל") }, modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -463,11 +506,26 @@ private fun TravelersDialog(
                     OutlinedButton(
                         enabled = name.isNotBlank() && age.toIntOrNull() != null,
                         onClick = {
-                            draft = draft + TripTraveler(UUID.randomUUID().toString(), name.trim(), age.toInt(), gender)
-                            name = ""; age = ""; gender = "לא צוין"
+                            val traveler = TripTraveler(
+                                id = editingTravelerId ?: UUID.randomUUID().toString(),
+                                name = name.trim(),
+                                age = age.toInt(),
+                                gender = gender
+                            )
+                            draft = if (editingTravelerId == null) {
+                                draft + traveler
+                            } else {
+                                draft.map { if (it.id == traveler.id) traveler else it }
+                            }
+                            clearEditor()
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("הוספת נוסע/ת") }
+                    ) { Text(if (editingTravelerId == null) "הוספת נוסע/ת" else "עדכון נוסע/ת") }
+                    if (editingTravelerId != null) {
+                        TextButton(onClick = { clearEditor() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("ביטול עריכה")
+                        }
+                    }
                 }
             }
         },
